@@ -118,9 +118,13 @@ showStrategySettings = input.string("", "⚙️ Настройки тестер�
 showFibLines = input.bool(true, "Показывать линии Фибо", group="Отображение")
 showFibLevels = input.bool(true, "Показывать уровни Фибо (%)", group="Отображение", 
      tooltip="Отображение процентов и цен на уровнях Фибоначчи")
+showAllFiboHistory = input.bool(true, "Показывать все Фибо (историю)", group="Отображение",
+     tooltip="Сохранять все Фибо циклы на графике. Если выключено - показывается только текущий цикл")
 showLabels = input.bool(true, "Показывать сигналы Buy/Sell", group="Отображение")
 showProfitPercent = input.bool(true, "Показывать % дохода на Sell", group="Отображение",
      tooltip="Отображать процент дохода рядом с меткой Sell")
+showLocalMax = input.bool(true, "Показывать локальные MAX", group="Отображение",
+     tooltip="Показывать локальные максимумы и их уровни 0.618 (пунктирные линии)")
 showInfo = input.bool(true, "Показывать таблицу", group="Отображение")
 
 // ============================================================================
@@ -376,6 +380,13 @@ var line line_pending_max = na      // Линия pending MAX
 var label label_pending_max = na   // Метка pending MAX
 var line line_pending_fib618 = na  // Линия уровня 0.618 для подтверждения
 
+// Массивы для локальных MAX (до 5 локальных максимумов)
+var float[] localMaxPrices = array.new_float(5, na)
+var int[] localMaxBars = array.new_int(5, na)
+var line[] localMaxLines = array.new_line(5, na)
+var line[] localMax618Lines = array.new_line(5, na)
+var label[] localMaxLabels = array.new_label(5, na)
+
 var bool fiboWasDrawn = false
 var int currentCycleId = 0
 var int drawnCycleId = -1
@@ -410,6 +421,10 @@ if doResetOrders
     pendingMaxPrice := na
     pendingMaxBar := na
     pendingMaxUsesBody := false
+    // Очистка локальных MAX
+    for i = 0 to 4
+        array.set(localMaxPrices, i, na)
+        array.set(localMaxBars, i, na)
     doResetOrders := false
 
 currentGrowth = confirmedMin > 0 ? ((high - confirmedMin) / confirmedMin) * 100 : 0
@@ -677,19 +692,20 @@ if systemState == STATE_FIBO_ACTIVE and not na(confirmedMin) and low < confirmed
     pendingMaxBar := na
     pendingMaxUsesBody := false
     
-    // Удаляем Fibo элементы с графика
-    box.delete(box_1_000)
-    box.delete(box_0_618)
-    box.delete(box_0_500)
-    box.delete(box_0_382)
-    box.delete(box_0_236)
-    label.delete(label_fib_1_000)
-    label.delete(label_fib_0_618)
-    label.delete(label_fib_0_500)
-    label.delete(label_fib_0_382)
-    label.delete(label_fib_0_236)
-    label.delete(label_min)
-    label.delete(label_max)
+    // Удаляем Fibo элементы с графика (только если не сохраняем историю)
+    if not showAllFiboHistory
+        box.delete(box_1_000)
+        box.delete(box_0_618)
+        box.delete(box_0_500)
+        box.delete(box_0_382)
+        box.delete(box_0_236)
+        label.delete(label_fib_1_000)
+        label.delete(label_fib_0_618)
+        label.delete(label_fib_0_500)
+        label.delete(label_fib_0_382)
+        label.delete(label_fib_0_236)
+        label.delete(label_min)
+        label.delete(label_max)
     
     box_1_000 := na
     box_0_618 := na
@@ -719,6 +735,22 @@ getFibLevel(fibRatio, minVal, maxVal, useLog) =>
 // ЛОГИКА ПОТЕНЦИАЛЬНОГО MAX (ждёт подтверждения касанием 0.618)
 // ============================================================================
 
+// Функция добавления локального MAX в массив (сдвигает старые вниз)
+addLocalMax(float price, int barIdx) =>
+    // Сдвигаем все элементы вниз (удаляем самый старый)
+    for i = 4 to 1
+        array.set(localMaxPrices, i, array.get(localMaxPrices, i - 1))
+        array.set(localMaxBars, i, array.get(localMaxBars, i - 1))
+    // Добавляем новый в начало
+    array.set(localMaxPrices, 0, price)
+    array.set(localMaxBars, 0, barIdx)
+
+// Функция очистки локальных MAX
+clearLocalMaxArrays() =>
+    for i = 0 to 4
+        array.set(localMaxPrices, i, na)
+        array.set(localMaxBars, i, na)
+
 // Определяем текущий MAX для сравнения (либо pendingMax, либо confirmedMax)
 currentMaxForComparison = hasPendingMax ? pendingMaxPrice : confirmedMax
 
@@ -729,7 +761,8 @@ if systemState == STATE_FIBO_ACTIVE and high > currentMaxForComparison
     newMaxBar = bar_index
     newMaxUsesBody = false
     
-    barsToSearch = bar_index - (hasPendingMax ? pendingMaxBar : confirmedMaxBar)
+    // Ищем лучший MAX от MIN до текущего бара (не от предыдущего MAX!)
+    barsToSearch = bar_index - confirmedMinBar
     bestHighPrice = 0.0
     bestHighBar = bar_index
     foundGoodCandle = false
@@ -739,7 +772,8 @@ if systemState == STATE_FIBO_ACTIVE and high > currentMaxForComparison
         bestHighBar := bar_index
         foundGoodCandle := true
     
-    for i = 1 to math.min(barsToSearch, 50)
+    // Ищем во всём диапазоне от MIN до текущего бара
+    for i = 1 to barsToSearch
         checkWick = getUpperWickPercent(i, confirmedMin)
         if checkWick <= wickThreshold and high[i] > bestHighPrice
             bestHighPrice := high[i]
@@ -755,7 +789,8 @@ if systemState == STATE_FIBO_ACTIVE and high > currentMaxForComparison
         maxHighBar = 0
         problemCandleBody = math.max(open[0], close[0])
         
-        for i = 1 to math.min(barsToSearch, 50)
+        // Ищем во всём диапазоне
+        for i = 1 to barsToSearch
             if high[i] > maxHighPrice
                 maxHighPrice := high[i]
                 maxHighBar := i
@@ -777,15 +812,30 @@ if systemState == STATE_FIBO_ACTIVE and high > currentMaxForComparison
             newMaxUsesBody := true
             log.info("⚠️ No good neighbor found, using current body: {0}", problemCandleBody)
     
+    // ВАЖНО: Сохраняем старый pending MAX как локальный MAX перед обновлением
+    if hasPendingMax and not na(pendingMaxPrice) and pendingMaxPrice != newMaxPrice
+        addLocalMax(pendingMaxPrice, pendingMaxBar)
+        log.info("📍 Added LOCAL MAX: price={0}, bar={1}", pendingMaxPrice, pendingMaxBar)
+    
     // Сохраняем как ПОТЕНЦИАЛЬНЫЙ MAX (ждёт подтверждения)
     pendingMaxPrice := newMaxPrice
     pendingMaxBar := newMaxBar
     pendingMaxUsesBody := newMaxUsesBody
     hasPendingMax := true
+    forceRedraw := true  // Перерисовать Фибо с новым pending MAX
     log.info("⏳ PENDING MAX: price={0}, bar={1}, waiting for 0.618 touch", newMaxPrice, newMaxBar)
 
 // Проверяем подтверждение потенциального MAX (касание уровня 0.618)
-if hasPendingMax and systemState == STATE_FIBO_ACTIVE
+// ВАЖНО: Не подтверждаем новый MAX пока есть открытые позиции - сначала нужен SELL
+hasOpenPositions = position1Open or position2Open or position3Open
+
+// Логируем блокировку подтверждения MAX из-за открытых позиций
+if hasPendingMax and systemState == STATE_FIBO_ACTIVE and hasOpenPositions
+    pending_fib_0618_check = getFibLevel(0.382, confirmedMin, pendingMaxPrice, useLogScale)
+    if low <= pending_fib_0618_check
+        log.info("⏸️ PENDING MAX BLOCKED: waiting for SELL first (pos1={0}, pos2={1}, pos3={2})", position1Open, position2Open, position3Open)
+
+if hasPendingMax and systemState == STATE_FIBO_ACTIVE and not hasOpenPositions
     // Рассчитываем уровень 0.618 от pendingMax до confirmedMin
     pending_fib_0618 = getFibLevel(0.382, confirmedMin, pendingMaxPrice, useLogScale)  // 0.618 от MAX = 1 - 0.618 = 0.382 для getFibLevel
     
@@ -809,19 +859,20 @@ if hasPendingMax and systemState == STATE_FIBO_ACTIVE
             log.info("🔄 NEW CYCLE after SELL+перехай: cycleId={0}, oldMax={1}, SAME MIN={2}", 
                  currentCycleId, confirmedMax, confirmedMin)
             
-            // Удаляем старые Fibo элементы с графика
-            box.delete(box_1_000)
-            box.delete(box_0_618)
-            box.delete(box_0_500)
-            box.delete(box_0_382)
-            box.delete(box_0_236)
-            label.delete(label_fib_1_000)
-            label.delete(label_fib_0_618)
-            label.delete(label_fib_0_500)
-            label.delete(label_fib_0_382)
-            label.delete(label_fib_0_236)
-            label.delete(label_min)
-            label.delete(label_max)
+            // Удаляем старые Fibo элементы с графика (только если не сохраняем историю)
+            if not showAllFiboHistory
+                box.delete(box_1_000)
+                box.delete(box_0_618)
+                box.delete(box_0_500)
+                box.delete(box_0_382)
+                box.delete(box_0_236)
+                label.delete(label_fib_1_000)
+                label.delete(label_fib_0_618)
+                label.delete(label_fib_0_500)
+                label.delete(label_fib_0_382)
+                label.delete(label_fib_0_236)
+                label.delete(label_min)
+                label.delete(label_max)
             
             box_1_000 := na
             box_0_618 := na
@@ -1008,9 +1059,13 @@ touchOrder3 = canBuildFibo and not na(order3Price) and low <= order3Price
 
 // Дебаг: логируем условия для BUY ордеров
 if systemState == STATE_FIBO_ACTIVE and (low <= order1Price or low <= order2Price or low <= order3Price)
-    log.info("📊 BUY CHECK bar={0}: low={1}, o1={2}, o2={3}, o3={4}", bar_index, low, order1Price, order2Price, order3Price)
+    log.info("📊 BUY CHECK bar={0}: low={1}, o2={2}", bar_index, low, order2Price)
     log.info("📊 Positions: pos1={0}, pos2={1}, pos3={2}", position1Open, position2Open, position3Open)
-    log.info("📊 Levels: orderLevel1={0}, orderLevel2={1}, orderLevel3={2}, stage={3}", orderLevel1, orderLevel2, orderLevel3, tradingStage)
+    // Дебаг: показываем какие уровни касаются
+    touch1 = low <= order1Price
+    touch2 = low <= order2Price
+    touch3 = low <= order3Price
+    log.info("📊 Touches: t1={0}, t2={1}, t3={2}, stage={3}", touch1, touch2, touch3, tradingStage)
 
 // SELL срабатывает сразу при касании уровня (без ожидания закрытия бара)
 touchSell1 = canBuildFibo and not na(sell1Price) and high >= sell1Price
@@ -1022,13 +1077,15 @@ var label buyLabel2 = na
 var label buyLabel3 = na
 
 // Формируем tooltip для BUY/SELL меток
-currentGrowthPct = confirmedMin > 0 ? ((confirmedMax - confirmedMin) / confirmedMin) * 100 : 0
+// ВАЖНО: Используем effectiveMax для расчёта роста
+currentGrowthPct = confirmedMin > 0 ? ((effectiveMax - confirmedMin) / confirmedMin) * 100 : 0
 // Общая информация для tooltip BUY
 stageText = tradingStage == 1 ? "Этап 1 (0.618/0.5/0.382)" : "Этап 2 (0.5/0.382/0.236)"
 buyTooltip = "Этап: " + stageText +
      "\n───────────" +
      "\nMIN: " + str.tostring(nz(confirmedMin, 0), "#.####") + " (бар " + str.tostring(nz(confirmedMinBar, 0)) + ")" +
-     "\nMAX: " + str.tostring(nz(confirmedMax, 0), "#.####") + " (бар " + str.tostring(nz(confirmedMaxBar, 0)) + ")" +
+     "\nMAX: " + str.tostring(nz(effectiveMax, 0), "#.####") + " (бар " + str.tostring(nz(effectiveMaxBar, 0)) + ")" +
+     (hasPendingMax ? " ⏳PENDING" : "") +
      "\nРост: " + str.tostring(currentGrowthPct, "#.#") + "%"
 
 // ВАЖНО: Дополнительная проверка 100% роста перед открытием позиций
@@ -1039,9 +1096,16 @@ canBuyInCycle = not cycleHadSell
 
 // Проверка что это НЕ тот же Фибо что уже был продан
 // (MIN и MAX должны отличаться от последнего проданного цикла)
+// ВАЖНО: Используем effectiveMax (который включает pending MAX)
 isSameFiboAsSold = not na(lastSoldMin) and not na(lastSoldMax) and 
-     math.abs(confirmedMin - lastSoldMin) < 0.0001 and math.abs(confirmedMax - lastSoldMax) < 0.0001
+     math.abs(confirmedMin - lastSoldMin) < 0.0001 and math.abs(effectiveMax - lastSoldMax) < 0.0001
 isNewFibo = not isSameFiboAsSold
+
+// Дебаг BUY2 - когда цена касается уровня 0.5 но позиция не открыта
+if low <= order2Price and not position2Open and systemState == STATE_FIBO_ACTIVE and position1Open
+    log.info("🔍 BUY2 DEBUG bar={0}: low={1}, order2Price={2}", bar_index, low, order2Price)
+    log.info("🔍 BUY2 CONDITIONS: growthValid={0}, canBuyInCycle={1}, isNewFibo={2}, cycleHadSell={3}", growthIsValid, canBuyInCycle, isNewFibo, cycleHadSell)
+    log.info("🔍 BUY2 FIBO: lastSoldMin={0}, lastSoldMax={1}, min={2}, effMax={3}", lastSoldMin, lastSoldMax, confirmedMin, effectiveMax)
 
 // ============================================================================
 // BUY ОРДЕРА: Рыночные ордера при касании уровня
@@ -1049,10 +1113,11 @@ isNewFibo = not isSameFiboAsSold
 
 // Для исторических баров: только одна покупка за бар (цена касается уровней последовательно)
 // Для текущего бара (реальное время): можно несколько покупок
-// BUY2 разрешён если BUY1 был на прошлом баре ИЛИ это текущий формирующийся бар
-// BUY3 разрешён если BUY2 был на прошлом баре ИЛИ это текущий формирующийся бар
-canBuy2OnThisBar = position1Open[1] or (position1Open and not barstate.isconfirmed) or not position1Open
-canBuy3OnThisBar = position2Open[1] or (position2Open and not barstate.isconfirmed) or not position2Open
+// BUY2 и BUY3 могут быть на том же баре что и предыдущий BUY
+// На исторических барах - проверяем что позиция уже открыта (в текущем выполнении)
+// На реальном времени - проверяем прошлый бар или текущий формирующийся
+canBuy2OnThisBar = position1Open or not position1Open  // BUY2 можно если BUY1 уже открыт или не нужен
+canBuy3OnThisBar = position2Open or not position2Open  // BUY3 можно если BUY2 уже открыт или не нужен
 
 // BUY1: Покупка при касании уровня 0.618
 if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and growthIsValid and canBuyInCycle and isNewFibo
@@ -1077,10 +1142,10 @@ if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and gr
     position1Open := true
     entryPrice1 := order1Price
     entryMin1 := confirmedMin
-    entryMax1 := confirmedMax
+    entryMax1 := effectiveMax
     entryMinBar1 := confirmedMinBar
-    entryMaxBar1 := confirmedMaxBar
-    log.info("✅ BUY1: bar={0}, price={1}, cycleId={2}, stage={3}", bar_index, order1Price, currentCycleId, tradingStage)
+    entryMaxBar1 := effectiveMaxBar
+    log.info("✅ BUY1: bar={0}, price={1}, cycleId={2}, stage={3}, pendingMax={4}", bar_index, order1Price, currentCycleId, tradingStage, hasPendingMax)
 else if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and not growthIsValid
     log.warning("⛔ BUY1 BLOCKED: growth {0}% < {1}%", currentGrowthPct, minGrowthPercent)
 else if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and not canBuyInCycle
@@ -1111,12 +1176,16 @@ if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE and gr
     position2Open := true
     entryPrice2 := order2Price
     entryMin2 := confirmedMin
-    entryMax2 := confirmedMax
+    entryMax2 := effectiveMax
     entryMinBar2 := confirmedMinBar
-    entryMaxBar2 := confirmedMaxBar
+    entryMaxBar2 := effectiveMaxBar
     log.info("✅ BUY2: bar={0}, price={1}, cycleId={2}", bar_index, order2Price, currentCycleId)
 else if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE and not growthIsValid
     log.warning("⛔ BUY2 BLOCKED: growth {0}% < {1}%", currentGrowthPct, minGrowthPercent)
+else if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE and not canBuyInCycle
+    log.warning("⛔ BUY2 BLOCKED: cycleHadSell=true (stage={0})", tradingStage)
+else if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE and not isNewFibo
+    log.warning("⛔ BUY2 BLOCKED: isSameFiboAsSold (min={0}, max={1}, lastSoldMin={2}, lastSoldMax={3})", confirmedMin, confirmedMax, lastSoldMin, lastSoldMax)
 
 // BUY3: Покупка при касании уровня 0.382
 if touchOrder3 and not position3Open and systemState == STATE_FIBO_ACTIVE and growthIsValid and canBuyInCycle and isNewFibo and canBuy3OnThisBar
@@ -1141,9 +1210,9 @@ if touchOrder3 and not position3Open and systemState == STATE_FIBO_ACTIVE and gr
     position3Open := true
     entryPrice3 := order3Price
     entryMin3 := confirmedMin
-    entryMax3 := confirmedMax
+    entryMax3 := effectiveMax
     entryMinBar3 := confirmedMinBar
-    entryMaxBar3 := confirmedMaxBar
+    entryMaxBar3 := effectiveMaxBar
     log.info("✅ BUY3: bar={0}, price={1}, cycleId={2}", bar_index, order3Price, currentCycleId)
 else if touchOrder3 and not position3Open and systemState == STATE_FIBO_ACTIVE and not growthIsValid
     log.warning("⛔ BUY3 BLOCKED: growth {0}% < {1}%", currentGrowthPct, minGrowthPercent)
@@ -1225,8 +1294,8 @@ if touchSell3 and canSellPos3 and systemState == STATE_FIBO_ACTIVE
     sellCount := sellCount + 1
     cycleHadSell := true  // Запрещаем повторные покупки в этом цикле
     lastSoldMin := confirmedMin  // Запоминаем MIN/MAX проданного цикла
-    lastSoldMax := confirmedMax
-    log.info("✅ SELL ALL (level 50%): bar={0}, price={1}, amount=${2}, profit=${3}, soldMin={4}, soldMax={5}", bar_index, sell3Price, totalAmount, totalProfit, confirmedMin, confirmedMax)
+    lastSoldMax := effectiveMax
+    log.info("✅ SELL ALL (level 50%): bar={0}, price={1}, amount=${2}, profit=${3}, soldMin={4}, soldMax={5}", bar_index, sell3Price, totalAmount, totalProfit, confirmedMin, effectiveMax)
     
     // Обновляем статистику по индикатору
     if na(firstTradeTime)
@@ -1308,8 +1377,8 @@ else if touchSell2 and canSellPos2 and not canSellPos3 and systemState == STATE_
     sellCount := sellCount + 1
     cycleHadSell := true  // Запрещаем повторные покупки в этом цикле
     lastSoldMin := confirmedMin  // Запоминаем MIN/MAX проданного цикла
-    lastSoldMax := confirmedMax
-    log.info("✅ SELL ALL (level 61.8%): bar={0}, price={1}, amount=${2}, profit=${3}, soldMin={4}, soldMax={5}", bar_index, sell2Price, totalAmount, totalProfit, confirmedMin, confirmedMax)
+    lastSoldMax := effectiveMax
+    log.info("✅ SELL ALL (level 61.8%): bar={0}, price={1}, amount=${2}, profit=${3}, soldMin={4}, soldMax={5}", bar_index, sell2Price, totalAmount, totalProfit, confirmedMin, effectiveMax)
     
     // Обновляем статистику по индикатору
     if na(firstTradeTime)
@@ -1371,8 +1440,8 @@ else if touchSell1 and canSellPos1 and not canSellPos2 and not canSellPos3 and s
     position1Open := false
     sellCount := sellCount + 1
     lastSoldMin := confirmedMin  // Запоминаем MIN/MAX проданного цикла
-    lastSoldMax := confirmedMax
-    log.info("✅ SELL1: bar={0}, price={1}, soldMin={2}, soldMax={3}, stage={4}", bar_index, sell1Price, confirmedMin, confirmedMax, tradingStage)
+    lastSoldMax := effectiveMax
+    log.info("✅ SELL1: bar={0}, price={1}, soldMin={2}, soldMax={3}, stage={4}", bar_index, sell1Price, confirmedMin, effectiveMax, tradingStage)
     
     // Обновляем статистику по индикатору
     if na(firstTradeTime)
@@ -1595,19 +1664,20 @@ if systemState == STATE_WAITING_RESET
         position3Open := false
         doResetOrders := true
         
-        // Удаляем старые Fibo элементы с графика
-        box.delete(box_1_000)
-        box.delete(box_0_618)
-        box.delete(box_0_500)
-        box.delete(box_0_382)
-        box.delete(box_0_236)
-        label.delete(label_fib_1_000)
-        label.delete(label_fib_0_618)
-        label.delete(label_fib_0_500)
-        label.delete(label_fib_0_382)
-        label.delete(label_fib_0_236)
-        label.delete(label_min)
-        label.delete(label_max)
+        // Удаляем старые Fibo элементы с графика (только если не сохраняем историю)
+        if not showAllFiboHistory
+            box.delete(box_1_000)
+            box.delete(box_0_618)
+            box.delete(box_0_500)
+            box.delete(box_0_382)
+            box.delete(box_0_236)
+            label.delete(label_fib_1_000)
+            label.delete(label_fib_0_618)
+            label.delete(label_fib_0_500)
+            label.delete(label_fib_0_382)
+            label.delete(label_fib_0_236)
+            label.delete(label_min)
+            label.delete(label_max)
         
         box_1_000 := na
         box_0_618 := na
@@ -1631,19 +1701,20 @@ if systemState == STATE_WAITING_RESET
         log.info("🔄 NEW CYCLE in WAITING_RESET: cycleId={0}, high={1} > max={2}, SAME MIN={3}", 
              currentCycleId, high, confirmedMax, confirmedMin)
         
-        // Удаляем старые Fibo элементы с графика
-        box.delete(box_1_000)
-        box.delete(box_0_618)
-        box.delete(box_0_500)
-        box.delete(box_0_382)
-        box.delete(box_0_236)
-        label.delete(label_fib_1_000)
-        label.delete(label_fib_0_618)
-        label.delete(label_fib_0_500)
-        label.delete(label_fib_0_382)
-        label.delete(label_fib_0_236)
-        label.delete(label_min)
-        label.delete(label_max)
+        // Удаляем старые Fibo элементы с графика (только если не сохраняем историю)
+        if not showAllFiboHistory
+            box.delete(box_1_000)
+            box.delete(box_0_618)
+            box.delete(box_0_500)
+            box.delete(box_0_382)
+            box.delete(box_0_236)
+            label.delete(label_fib_1_000)
+            label.delete(label_fib_0_618)
+            label.delete(label_fib_0_500)
+            label.delete(label_fib_0_382)
+            label.delete(label_fib_0_236)
+            label.delete(label_min)
+            label.delete(label_max)
         
         box_1_000 := na
         box_0_618 := na
@@ -1728,7 +1799,7 @@ if systemState == STATE_WAITING_RESET
             bestHighBarMax := bar_index
             foundGoodCandleMax := true
         
-        for i = 1 to math.min(barsToSearchMax, 50)
+        for i = 1 to barsToSearchMax
             checkWick = getUpperWickPercent(i, confirmedMin)
             if checkWick <= wickThreshold and high[i] > bestHighPriceMax
                 bestHighPriceMax := high[i]
@@ -1744,7 +1815,7 @@ if systemState == STATE_WAITING_RESET
             maxHighBarWR = 0
             problemCandleBodyWR = math.max(open[0], close[0])
             
-            for i = 1 to math.min(barsToSearchMax, 50)
+            for i = 1 to barsToSearchMax
                 if high[i] > maxHighPriceWR
                     maxHighPriceWR := high[i]
                     maxHighBarWR := i
@@ -1929,19 +2000,20 @@ if systemState == STATE_WAITING_RESET
             lastSoldMin := na
             lastSoldMax := na
             
-            // Удаляем старые Fibo элементы с графика
-            box.delete(box_1_000)
-            box.delete(box_0_618)
-            box.delete(box_0_500)
-            box.delete(box_0_382)
-            box.delete(box_0_236)
-            label.delete(label_fib_1_000)
-            label.delete(label_fib_0_618)
-            label.delete(label_fib_0_500)
-            label.delete(label_fib_0_382)
-            label.delete(label_fib_0_236)
-            label.delete(label_min)
-            label.delete(label_max)
+            // Удаляем старые Fibo элементы с графика (только если не сохраняем историю)
+            if not showAllFiboHistory
+                box.delete(box_1_000)
+                box.delete(box_0_618)
+                box.delete(box_0_500)
+                box.delete(box_0_382)
+                box.delete(box_0_236)
+                label.delete(label_fib_1_000)
+                label.delete(label_fib_0_618)
+                label.delete(label_fib_0_500)
+                label.delete(label_fib_0_382)
+                label.delete(label_fib_0_236)
+                label.delete(label_min)
+                label.delete(label_max)
             
             box_1_000 := na
             box_0_618 := na
@@ -1998,6 +2070,21 @@ deleteFiboBoxes() =>
     label.delete(label_fib_0_382)
     label.delete(label_fib_0_236)
 
+deleteLocalMaxLines() =>
+    for i = 0 to 4
+        existingLine = array.get(localMaxLines, i)
+        existing618Line = array.get(localMax618Lines, i)
+        existingLabel = array.get(localMaxLabels, i)
+        if not na(existingLine)
+            line.delete(existingLine)
+        if not na(existing618Line)
+            line.delete(existing618Line)
+        if not na(existingLabel)
+            label.delete(existingLabel)
+        array.set(localMaxLines, i, na)
+        array.set(localMax618Lines, i, na)
+        array.set(localMaxLabels, i, na)
+
 cycleChanged = false
 
 if systemState == STATE_WAITING_RESET and prevSystemState == STATE_FIBO_ACTIVE
@@ -2015,6 +2102,8 @@ if systemState == STATE_WAITING_RESET and prevSystemState == STATE_FIBO_ACTIVE
     label_fib_0_236 := na
     label_min := na
     label_max := na
+    // Удаляем линии локальных MAX при переходе в WAITING_RESET
+    deleteLocalMaxLines()
     fiboWasDrawn := false
     drawnCycleId := -1
     log.info("📦 WAITING_RESET: Fibo variables reset (boxes remain on chart)")
@@ -2049,7 +2138,7 @@ if showFibLines and canBuildFibo
     if needsRedraw
         // Удаляем старые элементы ТОЛЬКО если это обновление того же цикла
         // Для нового цикла - просто создаём новые (старые остаются как история)
-        if drawnCycleId == currentCycleId
+        if drawnCycleId == currentCycleId or not showAllFiboHistory
             box.delete(box_1_000)
             box.delete(box_0_618)
             box.delete(box_0_500)
@@ -2228,6 +2317,49 @@ else if not hasPendingMax
     line_pending_max := na
     label_pending_max := na
     line_pending_fib618 := na
+
+// ============================================================================
+// ОТРИСОВКА ЛОКАЛЬНЫХ MAX
+// ============================================================================
+
+if showLocalMax and showFibLines and systemState == STATE_FIBO_ACTIVE and not na(confirmedMin)
+    // Удаляем старые линии локальных MAX
+    for i = 0 to 4
+        existingLine = array.get(localMaxLines, i)
+        existing618Line = array.get(localMax618Lines, i)
+        existingLabel = array.get(localMaxLabels, i)
+        if not na(existingLine)
+            line.delete(existingLine)
+        if not na(existing618Line)
+            line.delete(existing618Line)
+        if not na(existingLabel)
+            label.delete(existingLabel)
+        array.set(localMaxLines, i, na)
+        array.set(localMax618Lines, i, na)
+        array.set(localMaxLabels, i, na)
+    
+    // Рисуем новые линии локальных MAX
+    for i = 0 to 4
+        localPrice = array.get(localMaxPrices, i)
+        localBar = array.get(localMaxBars, i)
+        
+        if not na(localPrice) and not na(localBar) and localPrice > 0 and localBar > 0
+            // Линия локального MAX (серая пунктирная)
+            maxLine = line.new(localBar, localPrice, bar_index, localPrice, 
+                 color=color.new(color.gray, 50), width=1, style=line.style_dotted)
+            array.set(localMaxLines, i, maxLine)
+            
+            // Уровень 0.618 от локального MAX (оранжевая пунктирная)
+            local_fib_0618 = getFibLevel(0.382, confirmedMin, localPrice, useLogScale)
+            fib618Line = line.new(localBar, local_fib_0618, bar_index, local_fib_0618, 
+                 color=color.new(color.orange, 70), width=1, style=line.style_dotted)
+            array.set(localMax618Lines, i, fib618Line)
+            
+            // Метка с ценой
+            localLabel = label.new(localBar, localPrice, "L" + str.tostring(i + 1) + "\n" + str.tostring(localPrice, "#.####"), 
+                 color=color.new(color.gray, 70), textcolor=color.white, style=label.style_label_down, size=size.tiny,
+                 tooltip="Локальный MAX #" + str.tostring(i + 1) + "\nЦена: " + str.tostring(localPrice, "#.####") + "\n0.618: " + str.tostring(local_fib_0618, "#.####"))
+            array.set(localMaxLabels, i, localLabel)
 
 // ============================================================================
 // ТАБЛИЦА СТАТИСТИКИ
