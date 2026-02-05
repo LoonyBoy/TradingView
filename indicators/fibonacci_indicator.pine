@@ -307,6 +307,11 @@ var int prevConfirmedMinBar = na
 var float lastSoldMin = na
 var float lastSoldMax = na
 
+// MIN/MAX последнего ПОЛНОСТЬЮ завершённого цикла (Этап 1 + Этап 2)
+// Чтобы не начинать новый цикл с тем же Фибо после полного завершения
+var float lastCompletedMin = na
+var float lastCompletedMax = na
+
 // Флаг что уже был хотя бы один завершённый цикл (для отличия первого цикла после листинга от reset)
 var bool hadCompletedCycle = false
 
@@ -427,20 +432,27 @@ var bool preservePendingMax = false // Флаг: НЕ сбрасывать pendi
 // ============================================================================
 
 if doResetOrders
-    orderLevel1 := 0.618
-    orderLevel2 := 0.5
-    orderLevel3 := 0.382
-    sellLevel1 := 0.786
-    sellLevel2 := 0.618
-    sellLevel3 := 0.5
-    tradingStage := 1  // Сброс на Этап 1
-    cycleHadSell := false  // Новый цикл — разрешаем покупки
-    cycleHadBuy := false   // Новый цикл — покупок ещё не было
+    // ВАЖНО: НЕ сбрасываем уровни, этап и cycleHadSell если мы на Этапе 2 (после SELL на Этапе 1)
+    // На Этапе 2 уровни и cycleHadSell уже установлены в логике SELL
+    if tradingStage == 1
+        orderLevel1 := 0.618
+        orderLevel2 := 0.5
+        orderLevel3 := 0.382
+        sellLevel1 := 0.786
+        sellLevel2 := 0.618
+        sellLevel3 := 0.5
+        cycleHadSell := false  // Новый цикл — разрешаем покупки
+    // tradingStage НЕ трогаем - он управляется логикой SELL и isSameMax/isSameMin
+    if tradingStage == 2
+        log.info("🛡️ [doResetOrders] PRESERVED Stage 2: orderLevel1={0}, sellLevel1={1}", orderLevel1, sellLevel1)
+    cycleHadBuy := false   // Сбрасываем — покупок в новом Фибо ещё не было
     lastBuyBar := na       // Сброс бара последней покупки
     // Сброс флагов покупок для нового цикла
-    position1WasBought := false
-    position2WasBought := false
-    position3WasBought := false
+    // ВАЖНО: НЕ сбрасываем если позиции ещё открыты (для корректного hadOnlyBuy1)
+    if not position1Open and not position2Open and not position3Open
+        position1WasBought := false
+        position2WasBought := false
+        position3WasBought := false
     // Сброс pending MAX - НО ТОЛЬКО если НЕ установлен preservePendingMax!
     if not preservePendingMax
         hasPendingMax := false
@@ -702,6 +714,9 @@ if systemState == STATE_WAITING_GROWTH
                 cycleHadSell := false
                 lastSoldMin := na
                 lastSoldMax := na
+                // Новый цикл — сбрасываем завершённый Фибо
+                lastCompletedMin := na
+                lastCompletedMax := na
                 // НЕ закрываем позиции — пусть strategy.exit() сработает на take-profit уровне
                 // Позиции из старого цикла продолжают ждать своего TP
                 // Только сбрасываем флаги если позиции действительно должны быть закрыты
@@ -732,12 +747,17 @@ if systemState == STATE_FIBO_ACTIVE
         doResetOrders := true
 
 // FULL RESET в STATE_FIBO_ACTIVE: если цена падает на 2%+ ниже MIN - сбрасываем и ищем новый MIN
-if systemState == STATE_FIBO_ACTIVE and not na(confirmedMin) and low < confirmedMin * 0.98
+// ВАЖНО: Если есть открытые позиции и стоп-лосс ВЫКЛЮЧЕН - НЕ делаем FULL RESET!
+// Позиции остаются открытыми и ждут SELL на текущем Fibo
+hasOpenPositionsForReset = position1Open or position2Open or position3Open
+canDoFullReset = not hasOpenPositionsForReset or enableStopLoss  // Можно сбросить только если нет позиций ИЛИ стоп-лосс включён
+
+if systemState == STATE_FIBO_ACTIVE and not na(confirmedMin) and low < confirmedMin * 0.98 and canDoFullReset
     log.info("📉 FULL RESET (FIBO_ACTIVE): low={0} < min*0.98={1}, starting new search", low, confirmedMin * 0.98)
     currentCycleId := currentCycleId + 1
     
     // Закрываем все открытые позиции если есть И стоп-лосс включён
-    if (position1Open or position2Open or position3Open) and enableStopLoss
+    if hasOpenPositionsForReset and enableStopLoss
         strategy.close_all(comment="FULL RESET - price below MIN")
         log.info("🛑 FULL RESET: Закрыты все позиции")
         position1Open := false
@@ -754,7 +774,11 @@ if systemState == STATE_FIBO_ACTIVE and not na(confirmedMin) and low < confirmed
     prevConfirmedMinBar := na
     prevConfirmedMaxBar := na
     lastSoldMin := na
+    lastSoldMin := na
     lastSoldMax := na
+    // Новый цикл — сбрасываем завершённый Фибо
+    lastCompletedMin := na
+    lastCompletedMax := na
     searchStartBar := bar_index
     maxSearchStartBar := bar_index  // Также сбрасываем для поиска MAX
     systemState := STATE_SEARCHING_MIN
@@ -798,6 +822,10 @@ if systemState == STATE_FIBO_ACTIVE and not na(confirmedMin) and low < confirmed
     box_0_236 := na
     fiboWasDrawn := false
     drawnCycleId := -1
+
+else if systemState == STATE_FIBO_ACTIVE and not na(confirmedMin) and low < confirmedMin * 0.98 and not canDoFullReset
+    // Есть открытые позиции и стоп-лосс выключен - НЕ делаем FULL RESET
+    log.info("⚠️ FULL RESET BLOCKED: low={0} < min*0.98={1}, but positions open and stopLoss disabled", low, confirmedMin * 0.98)
 
 // ============================================================================
 // ФУНКЦИЯ РАСЧЕТА УРОВНЕЙ ФИБОНАЧЧИ (определена здесь для использования в pending MAX)
@@ -1085,18 +1113,49 @@ if hasPendingMax and systemState == STATE_FIBO_ACTIVE and not hasOpenPositions
             // При SAME MIN разрешаем использовать старый MIN - сдвигаем searchStartBar
             searchStartBar := confirmedMinBar
             
-            // ВАЖНО: Сбрасываем на Этап 1 при перехае
-            tradingStage := 1
-            orderLevel1 := 0.618
-            orderLevel2 := 0.5
-            orderLevel3 := 0.382
-            sellLevel1 := 0.786
-            sellLevel2 := 0.618
-            sellLevel3 := 0.5
-            cycleHadSell := false
-            lastSoldMin := na
-            lastSoldMax := na
-            log.info("🔄 ПЕРЕХАЙ ПОСЛЕ SELL: сброс на Этап 1, cycleId={0}", currentCycleId)
+            // ВАЖНО: Проверяем, это НОВЫЙ MAX или тот же самый что был при SELL/COMPLETED
+            // Если MAX тот же (не изменился) - это не перехай, продолжаем на Этапе 2 или блокируем
+            isSameMaxAsSold = not na(lastSoldMax) and math.abs(newMaxPrice - lastSoldMax) < 0.0001
+            isSameMinAsCompleted = not na(lastCompletedMin) and math.abs(confirmedMin - lastCompletedMin) < 0.0001
+            isSameMaxAsCompleted = not na(lastCompletedMax) and math.abs(newMaxPrice - lastCompletedMax) < 0.0001
+            isAlreadyCompleted = isSameMinAsCompleted and isSameMaxAsCompleted
+            
+            if isAlreadyCompleted
+                // Этот Фибо уже полностью отторгован (Stage 1 + Stage 2) - НЕ сбрасываем
+                log.warning("⛔ MAX UPDATE BLOCKED: MIN={0}, MAX={1} already completed", confirmedMin, newMaxPrice)
+            else if isSameMaxAsSold
+                // MAX не изменился - продолжаем на Этапе 2 (не сбрасываем)
+                log.info("📊 SAME MAX AS SOLD ({0}): continuing on Stage 2, cycleId={1}", newMaxPrice, currentCycleId)
+                // Устанавливаем уровни Этапа 2
+                tradingStage := 2
+                orderLevel1 := 0.5
+                orderLevel2 := 0.382
+                orderLevel3 := 0.236
+                sellLevel1 := 0.618
+                sellLevel2 := 0.5
+                sellLevel3 := 0.382
+                cycleHadSell := false
+                // НЕ сбрасываем lastSoldMin/Max - они нужны для проверки
+            else
+                // Это ПЕРЕХАЙ - новый MAX выше старого, сброс на Этап 1
+                tradingStage := 1
+                orderLevel1 := 0.618
+                orderLevel2 := 0.5
+                orderLevel3 := 0.382
+                sellLevel1 := 0.786
+                sellLevel2 := 0.618
+                sellLevel3 := 0.5
+                cycleHadSell := false
+                lastSoldMin := na
+                lastSoldMax := na
+                // Новый MAX — сбрасываем завершённый Фибо ТОЛЬКО если это действительно НОВЫЙ MAX
+                // (т.е. выше lastCompletedMax)
+                if na(lastCompletedMax) or newMaxPrice > lastCompletedMax + 0.0001
+                    lastCompletedMin := na
+                    lastCompletedMax := na
+                    log.info("🔄 ПЕРЕХАЙ ПОСЛЕ SELL: сброс на Этап 1, cycleId={0}, newMax={1} > oldSoldMax", currentCycleId, newMaxPrice)
+                else
+                    log.info("🔄 ПЕРЕХАЙ НО ТОТ ЖЕ MAX: cycleId={0}, newMax={1}, lastCompletedMax={2}", currentCycleId, newMaxPrice, lastCompletedMax)
             
             newGrowth = confirmedMin > 0 ? ((confirmedMax - confirmedMin) / confirmedMin) * 100 : 0
             
@@ -1109,41 +1168,58 @@ if hasPendingMax and systemState == STATE_FIBO_ACTIVE and not hasOpenPositions
                 systemState := STATE_WAITING_GROWTH
         else
             // Нет SELL — но MAX обновился, значит нужно перезапустить торговый цикл
-            // Не закрываем позиции — пусть strategy.exit() сработаеет на take-profit
-            confirmedMax := newMaxPrice
-            confirmedMaxBar := newMaxBar
-            // Если MAX использует body, барьер = body
-            if newMaxUsesBody
-                confirmedMaxRealHigh := newMaxPrice
+            // Но сначала проверяем - может этот Фибо уже полностью отторгован?
+            isSameMinAsCompletedNoSell = not na(lastCompletedMin) and math.abs(confirmedMin - lastCompletedMin) < 0.0001
+            isSameMaxAsCompletedNoSell = not na(lastCompletedMax) and math.abs(newMaxPrice - lastCompletedMax) < 0.0001
+            isAlreadyCompletedNoSell = isSameMinAsCompletedNoSell and isSameMaxAsCompletedNoSell
+            
+            // DEBUG: Логируем все значения для диагностики
+            log.info("🔍 PENDING CONFIRM DEBUG: confirmedMin={0}, lastCompletedMin={1}, newMax={2}, lastCompletedMax={3}", confirmedMin, lastCompletedMin, newMaxPrice, lastCompletedMax)
+            log.info("🔍 PENDING CONFIRM DEBUG: isSameMin={0}, isSameMax={1}, isCompleted={2}", isSameMinAsCompletedNoSell, isSameMaxAsCompletedNoSell, isAlreadyCompletedNoSell)
+            
+            if isAlreadyCompletedNoSell
+                // Этот Фибо уже полностью отторгован - НЕ сбрасываем на Stage 1
+                log.warning("⛔ MAX UPDATE (no sell) BLOCKED: MIN={0}, MAX={1} already completed", confirmedMin, newMaxPrice)
             else
-                confirmedMaxRealHigh := high[bar_index - newMaxBar]
-            maxUsesBody := newMaxUsesBody
-            forceRedraw := true
-            
-            // Не сбрасываем positionXOpen чтобы отслеживать открытые позиции
-            
-            // ВАЖНО: Полный сброс торгового цикла при обновлении MAX
-            sellCount := 0
-            touchedZone06_07 := false
-            doResetOrders := true
-            
-            // Сброс на Этап 1 при обновлении MAX
-            tradingStage := 1
-            orderLevel1 := 0.618
-            orderLevel2 := 0.5
-            orderLevel3 := 0.382
-            sellLevel1 := 0.786
-            sellLevel2 := 0.618
-            sellLevel3 := 0.5
-            cycleHadSell := false
-            lastSoldMin := na
-            lastSoldMax := na
-            
-            // Очищаем локальные MAX при обновлении MAX
-            clearLocalMaxArrays()
-            deleteLocalMaxLines()
-            
-            log.info("📈 MAX UPDATED (confirmed): newMax={0}, bar={1}, FULL CYCLE RESET to Stage 1", newMaxPrice, newMaxBar)
+                // Не закрываем позиции — пусть strategy.exit() сработаеет на take-profit
+                confirmedMax := newMaxPrice
+                confirmedMaxBar := newMaxBar
+                // Если MAX использует body, барьер = body
+                if newMaxUsesBody
+                    confirmedMaxRealHigh := newMaxPrice
+                else
+                    confirmedMaxRealHigh := high[bar_index - newMaxBar]
+                maxUsesBody := newMaxUsesBody
+                forceRedraw := true
+                
+                // Не сбрасываем positionXOpen чтобы отслеживать открытые позиции
+                
+                // ВАЖНО: Полный сброс торгового цикла при обновлении MAX
+                sellCount := 0
+                touchedZone06_07 := false
+                doResetOrders := true
+                
+                // Сброс на Этап 1 при обновлении MAX
+                tradingStage := 1
+                orderLevel1 := 0.618
+                orderLevel2 := 0.5
+                orderLevel3 := 0.382
+                sellLevel1 := 0.786
+                sellLevel2 := 0.618
+                sellLevel3 := 0.5
+                cycleHadSell := false
+                lastSoldMin := na
+                lastSoldMax := na
+                // Новый MAX — сбрасываем завершённый Фибо ТОЛЬКО если MAX реально новый (выше)
+                if na(lastCompletedMax) or newMaxPrice > lastCompletedMax + 0.0001
+                    lastCompletedMin := na
+                    lastCompletedMax := na
+                
+                // Очищаем локальные MAX при обновлении MAX
+                clearLocalMaxArrays()
+                deleteLocalMaxLines()
+                
+                log.info("📈 MAX UPDATED (confirmed): newMax={0}, bar={1}, FULL CYCLE RESET to Stage 1", newMaxPrice, newMaxBar)
 
 // ============================================================================
 // РАСЧЕТ УРОВНЕЙ FIBONACCI
@@ -1236,10 +1312,18 @@ canBuyInCycle = not cycleHadSell
 
 // Проверка что это НЕ тот же Фибо что уже был продан
 // (MIN и MAX должны отличаться от последнего проданного цикла)
+// ВАЖНО: На Этапе 2 это правило НЕ действует — покупаем на том же Фибо!
 // ВАЖНО: Используем effectiveMax (который включает pending MAX)
 isSameFiboAsSold = not na(lastSoldMin) and not na(lastSoldMax) and 
      math.abs(confirmedMin - lastSoldMin) < 0.0001 and math.abs(effectiveMax - lastSoldMax) < 0.0001
-isNewFibo = not isSameFiboAsSold
+
+// Проверка что этот Фибо НЕ был полностью завершён (Этап 1 + Этап 2)
+// Если цикл уже прошёл оба этапа — новые покупки запрещены до нового MIN или MAX
+isCompletedFibo = not na(lastCompletedMin) and not na(lastCompletedMax) and 
+     math.abs(confirmedMin - lastCompletedMin) < 0.0001 and math.abs(effectiveMax - lastCompletedMax) < 0.0001
+
+// На Этапе 2 разрешаем покупать на том же Фибо (если он не завершён полностью)
+isNewFibo = (tradingStage == 2 or not isSameFiboAsSold) and not isCompletedFibo
 
 // Дебаг BUY2 - когда цена касается уровня 0.5 но позиция не открыта
 if low <= order2Price and not position2Open and systemState == STATE_FIBO_ACTIVE and position1Open
@@ -1312,7 +1396,10 @@ else if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE a
 else if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and not canBuyInCycle
     log.warning("⛔ BUY1 BLOCKED: cycleHadSell=true (stage={0})", tradingStage)
 else if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and not isNewFibo
-    log.warning("⛔ BUY1 BLOCKED: isSameFiboAsSold (min={0}, max={1}, lastSoldMin={2}, lastSoldMax={3})", confirmedMin, confirmedMax, lastSoldMin, lastSoldMax)
+    if isCompletedFibo
+        log.warning("⛔ BUY1 BLOCKED: isCompletedFibo (min={0}, max={1}, lastCompletedMin={2}, lastCompletedMax={3})", confirmedMin, effectiveMax, lastCompletedMin, lastCompletedMax)
+    else
+        log.warning("⛔ BUY1 BLOCKED: isSameFiboAsSold (min={0}, max={1}, lastSoldMin={2}, lastSoldMax={3})", confirmedMin, effectiveMax, lastSoldMin, lastSoldMax)
 
 // BUY2: Покупка при касании уровня 0.5
 if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE and growthIsValid and canBuyInCycle and isNewFibo and canBuy2OnThisBar and buy2NotSamePriceAsBuy1 and maxIsConfirmed
@@ -1415,9 +1502,9 @@ var label sellLabel3 = na
 
 // Для исторических баров: SELL только если позиция была открыта на прошлом баре
 // Для текущего бара (реальное время): можно на том же баре
-// ВАЖНО: SELL разрешён минимум через 2 бара после последней покупки
+// ВАЖНО: SELL разрешён минимум через 1 бар после последней покупки
 barsSinceLastBuy = na(lastBuyBar) ? 999 : bar_index - lastBuyBar
-canSellAfterBuy = barsSinceLastBuy >= 2
+canSellAfterBuy = barsSinceLastBuy >= 1
 canSellPos1 = position1Open[1] or (position1Open and not barstate.isconfirmed)
 canSellPos2 = position2Open[1] or (position2Open and not barstate.isconfirmed)
 canSellPos3 = position3Open[1] or (position3Open and not barstate.isconfirmed)
@@ -1460,10 +1547,18 @@ else if openPositionsCount >= 3
     targetSellLevel := tradingStage == 1 ? "50%" : "38.2%"
 
 // Проверяем достижение целевого уровня
-// ВАЖНО: SELL только если цена >= максимальной цены покупки (продаём в плюс)
+// ВАЖНО: SELL на уровне Fibo ВСЕГДА (даже в убыток)
+// При 3 позициях: BUY1 будет в убытке, BUY2 примерно в 0, BUY3 в плюсе
+// DEBUG: логируем состояние SELL проверки
+if (position1Open or position2Open or position3Open) and high >= nz(targetSellPrice, 0)
+    log.info("🔍 SELL CHECK: state={0}, hasOpen={1}, high={2}, target={3}, maxEntry={4}, stage={5}", 
+         systemState, hasAnyOpenPosition, high, targetSellPrice, maxEntryPrice, tradingStage)
+    log.info("🔍 SELL CONDITIONS: stateOK={0}, priceOK={1}", 
+         systemState == STATE_FIBO_ACTIVE, high >= targetSellPrice)
+
 if hasAnyOpenPosition and systemState == STATE_FIBO_ACTIVE and not na(targetSellPrice)
     touchTargetSell = high >= targetSellPrice
-    if touchTargetSell and targetSellPrice > maxEntryPrice
+    if touchTargetSell  // Убрана проверка profitOK - продаём на уровне Fibo всегда
         sellTriggered := true
         sellPrice := targetSellPrice
         sellLevelName := targetSellLevel
@@ -1544,12 +1639,19 @@ if sellTriggered
     sellCount := sellCount + 1
     cycleHadSell := true  // Запрещаем повторные покупки в этом цикле
     lastSoldMin := confirmedMin  // Запоминаем MIN/MAX проданного цикла
-    lastSoldMax := effectiveMax
-    log.info("✅ SELL ALL @ {0}: bar={1}, price={2}, amount=${3}, profit=${4}", sellLevelName, bar_index, sellPrice, totalAmount, totalProfit)
+    // ВАЖНО: Сохраняем ПОДТВЕРЖДЁННЫЙ MAX, а не effectiveMax (который может включать pending)
+    lastSoldMax := confirmedMax
+    log.info("✅ SELL ALL @ {0}: bar={1}, price={2}, amount=${3}, profit=${4}, lastSoldMax={5}", sellLevelName, bar_index, sellPrice, totalAmount, totalProfit, lastSoldMax)
     
-    // ═══ ПЕРЕХОД НА ЭТАП 2 ═══
-    // После первого SELL сдвигаем уровни вниз для повторных покупок
-    if tradingStage == 1
+    // ═══ ПЕРЕХОД МЕЖДУ ЭТАПАМИ ═══
+    // ВАЖНО: Этап 2 только если была ТОЛЬКО BUY1 (без BUY2/BUY3)
+    // Если были BUY2 или BUY3 — цикл полностью завершается
+    hadOnlyBuy1 = not position2WasBought and not position3WasBought
+    log.info("🔍 STAGE CHECK: hadOnlyBuy1={0}, position2WasBought={1}, position3WasBought={2}, tradingStage={3}", 
+         hadOnlyBuy1, position2WasBought, position3WasBought, tradingStage)
+    
+    if tradingStage == 1 and hadOnlyBuy1
+        // После первого SELL с только BUY1 — сдвигаем уровни вниз для Этапа 2
         tradingStage := 2
         // Новые уровни BUY для Этапа 2
         orderLevel1 := 0.5      // было 0.618
@@ -1569,6 +1671,29 @@ if sellTriggered
         position2WasBought := false
         position3WasBought := false
         log.info("🔄 ПЕРЕХОД НА ЭТАП 2: новые уровни BUY(0.5/0.382/0.236), SELL(0.618/0.5/0.382)")
+    else if tradingStage == 2 or (tradingStage == 1 and not hadOnlyBuy1)
+        // После SELL на Этапе 2 ИЛИ после SELL с BUY2/BUY3 на Этапе 1 — цикл полностью завершён
+        if tradingStage == 1
+            log.info("🏁 ЦИКЛ ЗАВЕРШЁН (Этап 1 с BUY2/BUY3): без Этапа 2, переход в WAITING_RESET")
+        // Отменяем все неисполненные лимитные ордера текущего цикла
+        strategy.cancel("BUY1_" + str.tostring(currentCycleId))
+        strategy.cancel("BUY2_" + str.tostring(currentCycleId))
+        strategy.cancel("BUY3_" + str.tostring(currentCycleId))
+        prevConfirmedMin := confirmedMin
+        prevConfirmedMax := confirmedMax
+        prevConfirmedMinBar := confirmedMinBar
+        prevConfirmedMaxBar := confirmedMaxBar
+        searchStartBar := bar_index
+        maxSearchStartBar := bar_index  // MAX ищем ТОЛЬКО после SELL!
+        // ВАЖНО: Сохраняем MIN/MAX как полностью завершённый цикл
+        // Это предотвратит новый цикл с теми же MIN/MAX
+        lastCompletedMin := confirmedMin
+        lastCompletedMax := effectiveMax
+        // Сбрасываем lastSoldMin/Max — цикл завершён полностью
+        lastSoldMin := na
+        lastSoldMax := na
+        systemState := STATE_WAITING_RESET
+        log.info("🏁 ЦИКЛ ЗАВЕРШЁН (Этап {0}): переход в WAITING_RESET, lastCompletedMin={1}, lastCompletedMax={2}", tradingStage, lastCompletedMin, lastCompletedMax)
     
     // Обновляем статистику по индикатору
     if na(firstTradeTime)
@@ -1586,22 +1711,6 @@ if sellTriggered
     drawdown = maxEquity - currentEquity
     if drawdown > maxDrawdown
         maxDrawdown := drawdown
-    
-    // После Этапа 2 — переходим в WAITING_RESET (цикл завершён)
-    // После Этапа 1 — продолжаем на Этапе 2 (уже установлен выше)
-    if tradingStage == 2
-        // Отменяем все неисполненные лимитные ордера текущего цикла
-        strategy.cancel("BUY1_" + str.tostring(currentCycleId))
-        strategy.cancel("BUY2_" + str.tostring(currentCycleId))
-        strategy.cancel("BUY3_" + str.tostring(currentCycleId))
-        prevConfirmedMin := confirmedMin
-        prevConfirmedMax := confirmedMax
-        prevConfirmedMinBar := confirmedMinBar
-        prevConfirmedMaxBar := confirmedMaxBar
-        searchStartBar := bar_index
-        maxSearchStartBar := bar_index  // MAX ищем ТОЛЬКО после SELL!
-        systemState := STATE_WAITING_RESET
-        log.info("🏁 ЦИКЛ ЗАВЕРШЁН (Этап 2): переход в WAITING_RESET")
 
 // ============================================================================
 // СТОП-ЛОСС НА УРОВНЕ 0 (МИНИМУМ)
@@ -1750,8 +1859,12 @@ if systemState == STATE_WAITING_RESET and isRecentBar
          na(confirmedMin) ? 0.0 : confirmedMin * 0.98)
 
 if systemState == STATE_WAITING_RESET
-    // Проверка 1: Падение ниже MIN * 0.98 → полный reset
-    if low < confirmedMin * 0.98
+    // Проверка на открытые позиции для FULL RESET
+    hasOpenPositionsWR = position1Open or position2Open or position3Open
+    canDoFullResetWR = not hasOpenPositionsWR or enableStopLoss
+    
+    // Проверка 1: Падение ниже MIN * 0.98 → полный reset (только если нет открытых позиций или стоп-лосс включён)
+    if low < confirmedMin * 0.98 and canDoFullResetWR
         log.info("📉 FULL RESET: low={0} < min*0.98={1}, starting new search", low, confirmedMin * 0.98)
         currentCycleId := currentCycleId + 1
         confirmedMin := na
@@ -1766,6 +1879,9 @@ if systemState == STATE_WAITING_RESET
         // Сбрасываем lastSold — новый MIN/MAX будут другими
         lastSoldMin := na
         lastSoldMax := na
+        // Новый цикл — сбрасываем завершённый Фибо
+        lastCompletedMin := na
+        lastCompletedMax := na
         searchStartBar := bar_index  // Начинаем поиск с текущего бара
         maxSearchStartBar := bar_index  // MAX тоже ищем с текущего бара
         systemState := STATE_SEARCHING_MIN
@@ -1808,6 +1924,10 @@ if systemState == STATE_WAITING_RESET
         fiboWasDrawn := false
         drawnCycleId := -1
         drawnMaxBar := na
+    
+    // FULL RESET заблокирован - есть открытые позиции и стоп-лосс выключен
+    else if low < confirmedMin * 0.98 and not canDoFullResetWR
+        log.info("⚠️ FULL RESET BLOCKED (WAITING_RESET): low={0} < min*0.98={1}, but positions open and stopLoss disabled", low, confirmedMin * 0.98)
     
     // Проверка 2: Перехай → новый цикл с тем же MIN
     else if high > confirmedMax
@@ -2024,6 +2144,9 @@ if systemState == STATE_WAITING_RESET
             // ВАЖНО: Сбрасываем lastSoldMin/Max — это НОВЫЙ цикл с новым Фибо
             lastSoldMin := na
             lastSoldMax := na
+            // Новый MAX — сбрасываем завершённый Фибо
+            lastCompletedMin := na
+            lastCompletedMax := na
             // При SAME MIN разрешаем использовать старый MIN - сдвигаем searchStartBar
             searchStartBar := confirmedMinBar
             
@@ -2054,9 +2177,10 @@ if systemState == STATE_WAITING_RESET
     // Проверка 3: После 10 баров - новый минимум с 100%+ ростом → новый цикл
     // ВАЖНО: Не начинать новый цикл пока есть открытые позиции!
     // 
-    // ДВА СЛУЧАЯ для нового MIN:
+    // ТРИ СЛУЧАЯ для нового MIN:
     // Случай 1: Новый MIN НИЖЕ предыдущего MIN → классический 100% рост
-    // Случай 2: Новый MIN ВЫШЕ предыдущего MIN, но новый MAX НИЖЕ предыдущего MAX → 100% рост внутри старого диапазона
+    // Случай 2: Новый MIN ВЫШЕ предыдущего MIN, но новый MAX НИЖЕ предыдущего MAX → 100% рост внутри старого диапазона (используем СТАРЫЙ MIN)
+    // Случай 3: После завершённого цикла - новый MIN ВЫШЕ lastCompletedMin, MAX НИЖЕ lastCompletedMax → НОВЫЙ цикл с НОВЫМ MIN/MAX
     else if barsAfterSell >= 10 and waitingResetGrowth >= 100 and not na(waitingResetLocalMin) and not position1Open and not position2Open and not position3Open
         // Прошло 10+ баров после SELL, есть минимум с ростом 100%+
         
@@ -2075,167 +2199,228 @@ if systemState == STATE_WAITING_RESET
         isCase2 = not na(prevConfirmedMin) and not na(prevConfirmedMax) and 
              waitingResetLocalMin > prevConfirmedMin and waitingResetLocalMax < prevConfirmedMax
         
+        // Случай 3 (НОВЫЙ): После завершённого цикла появился НОВЫЙ Фибо внутри старого диапазона
+        // Новый MIN выше lastCompletedMin, новый MAX ниже lastCompletedMax, рост 100%+ от НОВОГО MIN
+        // Это позволяет торговать внутренние движения после завершения полного цикла
+        growthFromNewMin = waitingResetLocalMin > 0 ? ((waitingResetLocalMax - waitingResetLocalMin) / waitingResetLocalMin) * 100 : 0
+        isCase3 = not na(lastCompletedMin) and not na(lastCompletedMax) and 
+             waitingResetLocalMin > lastCompletedMin and waitingResetLocalMax < lastCompletedMax and
+             growthFromNewMin >= minGrowthPercent
+        
         // Особый случай: первый цикл после листинга (нет prev значений)
         isFirstCycle = na(prevConfirmedMin) and na(prevConfirmedMax)
         
-        canStartNewCycle = isCase1 or isCase2 or isFirstCycle
+        canStartNewCycle = isCase1 or isCase2 or isCase3 or isFirstCycle
         
         log.info("🔍 CHECK3: localMin={0}, prevMin={1}, localMax={2}, prevMax={3}", 
              waitingResetLocalMin, na(prevConfirmedMin) ? 0.0 : prevConfirmedMin, waitingResetLocalMax, na(prevConfirmedMax) ? 0.0 : prevConfirmedMax)
-        log.info("🔍 CHECK3: isCase1={0}, isCase2={1}, isFirst={2}, canStart={3}", isCase1 ? 1 : 0, isCase2 ? 1 : 0, isFirstCycle ? 1 : 0, canStartNewCycle ? 1 : 0)
+        log.info("🔍 CHECK3: isCase1={0}, isCase2={1}, isCase3={2}, isFirst={3}, canStart={4}", isCase1 ? 1 : 0, isCase2 ? 1 : 0, isCase3 ? 1 : 0, isFirstCycle ? 1 : 0, canStartNewCycle ? 1 : 0)
+        if isCase3
+            log.info("🆕 CHECK3 Case3: lastCompletedMin={0}, lastCompletedMax={1}, growthFromNewMin={2}%", lastCompletedMin, lastCompletedMax, growthFromNewMin)
         
         // Проверяем что новый минимум находится после листинга
         if canStartNewCycle and not na(firstBarAfterListing) and newMinBarAbsolute >= firstBarAfterListing
             // ВАЖНО: При isCase2 используем СТАРЫЙ MIN (prevConfirmedMin), а не новый!
             // isCase1: новый MIN ниже → берём НОВЫЙ MIN
             // isCase2: новый MIN выше, но MAX ниже → продолжаем со СТАРЫМ MIN
+            // isCase3: НОВЫЙ Фибо внутри завершённого диапазона → берём НОВЫЙ MIN (сброс lastCompleted)
             
-            useOldMin = isCase2 and not isCase1  // Если только Case2, используем старый MIN
+            useOldMin = isCase2 and not isCase1 and not isCase3  // Case2 только если НЕ Case1 и НЕ Case3
             
-            if useOldMin
+            if isCase3
+                log.info("🆕 NEW OPPORTUNITY (CASE3: NEW FIBO inside completed): localMin={0}, localMax={1}, growth={2}%", waitingResetLocalMin, waitingResetLocalMax, growthFromNewMin)
+                // Case 3: Сбрасываем lastCompleted так как это НОВЫЙ Фибо
+                lastCompletedMin := na
+                lastCompletedMax := na
+            else if useOldMin
                 log.info("🆕 NEW OPPORTUNITY (CASE2: keep OLD MIN): localMin={0}, prevMin={1}, using prevMin, growth={2}%", waitingResetLocalMin, prevConfirmedMin, waitingResetGrowth)
             else
                 log.info("🆕 NEW OPPORTUNITY (CASE1: lower MIN): localMin={0}, growth={1}%", waitingResetLocalMin, waitingResetGrowth)
-            log.info("🎯 newMinBarOffset={0}, newMinBarAbsolute={1}, useOldMin={2}", newMinBarOffset, newMinBarAbsolute, useOldMin ? 1 : 0)
+            log.info("🎯 newMinBarOffset={0}, newMinBarAbsolute={1}, useOldMin={2}, isCase3={3}", newMinBarOffset, newMinBarAbsolute, useOldMin ? 1 : 0, isCase3 ? 1 : 0)
             
             // Определяем какой MIN использовать
             newMinUsesBody = false
             newMinPrice = useOldMin ? prevConfirmedMin : waitingResetLocalMin
             finalMinBar = useOldMin ? prevConfirmedMinBar : newMinBarAbsolute
             
-            // Проверяем фитиль только если используем новый MIN (не старый)
-            if not useOldMin
-                wickPctNew = getLowerWickPercent(newMinBarOffset)
-                if wickPctNew > wickThreshold
-                    problemCandleBodyMin = math.min(open[newMinBarOffset], close[newMinBarOffset])
-                    foundBetterMin = false
-                    
-                    for i = 1 to 5
-                        checkIdx = newMinBarOffset + i
-                        if checkIdx < waitingResetLookback
-                            neighborWick = getLowerWickPercent(checkIdx)
-                            if neighborWick <= wickThreshold and low[checkIdx] < problemCandleBodyMin
-                                newMinBarOffset := checkIdx
-                                newMinPrice := low[checkIdx]
-                                finalMinBar := bar_index - newMinBarOffset
-                                foundBetterMin := true
-                                break
-                        checkIdxR = newMinBarOffset - i
-                        if checkIdxR >= 0
-                            neighborWickR = getLowerWickPercent(checkIdxR)
-                            if neighborWickR <= wickThreshold and low[checkIdxR] < problemCandleBodyMin
-                                newMinBarOffset := checkIdxR
-                                newMinPrice := low[checkIdxR]
-                                finalMinBar := bar_index - newMinBarOffset
-                                foundBetterMin := true
-                                break
-                    
-                    if not foundBetterMin
-                        newMinPrice := problemCandleBodyMin
-                        newMinUsesBody := true
+            // ВАЖНО: СНАЧАЛА проверяем isCompletedCycle ДО любых изменений!
+            // Проверяем, это тот же MIN/MAX что был полностью завершён (Этап 1 + Этап 2)
+            // НО: Case 3 уже сбросил lastCompleted, поэтому эта проверка не заблокирует его
+            isSameMinAsCompletedEarly = useOldMin and not na(lastCompletedMin) and math.abs(newMinPrice - lastCompletedMin) < 0.0001
+            isSameMaxAsCompletedEarly = useOldMin and not na(lastCompletedMax) and not na(prevConfirmedMax) and math.abs(prevConfirmedMax - lastCompletedMax) < 0.0001
+            isCompletedCycleEarly = isSameMinAsCompletedEarly and isSameMaxAsCompletedEarly
             
-            // Начинаем новый цикл
-            currentCycleId := currentCycleId + 1
-            confirmedMin := newMinPrice
-            confirmedMinBar := finalMinBar
-            minUsesBody := useOldMin ? false : newMinUsesBody  // Старый MIN уже был проверен
-            
-            // ВАЖНО: Если используем старый MIN И был подтверждённый MAX в предыдущем цикле,
-            // сохраняем его как PENDING MAX (нужно снова дождаться касания 0.618)
-            if useOldMin and not na(prevConfirmedMax) and prevConfirmedMax > 0
-                // Сохраняем старый MAX как PENDING (не CONFIRMED!)
-                pendingMaxPrice := prevConfirmedMax
-                pendingMaxBar := prevConfirmedMaxBar
-                pendingMaxUsesBody := false  // Старый MAX уже был проверен
-                hasPendingMax := true
-                preservePendingMax := true   // ВАЖНО: Не сбрасывать в doResetOrders!
-                confirmedMax := na  // НЕ confirmed - ждём подтверждения
-                confirmedMaxBar := na
-                // Барьер для нового перехая
-                confirmedMaxRealHigh := prevConfirmedMax
-                // maxSearchStartBar сбрасываем на MIN чтобы искать перехаи от MIN
-                maxSearchStartBar := finalMinBar
-                
-                // Расчёт уровня 0.618 для подтверждения
-                expectedFib618OldMax = newMinPrice + (prevConfirmedMax - newMinPrice) * 0.618
-                log.info("════════════════════════════════════════════════════════════")
-                log.info("📊 [MAX EVENT] TYPE: KEEPING OLD MAX - NEW PENDING MAX")
-                log.info("📊 [MAX EVENT] REASON: Using old MIN, preserving prevConfirmedMax")
-                log.info("📊 [MAX EVENT] PENDING MAX: {0} at bar {1}", prevConfirmedMax, prevConfirmedMaxBar)
-                log.info("📊 [MAX EVENT] MIN: {0} at bar {1}", newMinPrice, finalMinBar)
-                log.info("📊 [MAX EVENT] Level 0.618 for confirmation: {0}", expectedFib618OldMax)
-                log.info("📊 [MAX EVENT] STATUS: Waiting for price to touch 0.618 level")
-                log.info("📊 [MAX EVENT] preservePendingMax SET to TRUE - will survive doResetOrders")
-                log.info("════════════════════════════════════════════════════════════")
+            if isCompletedCycleEarly
+                // Этот цикл уже полностью завершён — НЕ начинаем новый цикл!
+                // Остаёмся в WAITING_RESET и ждём новый MIN или MAX
+                log.warning("⛔ CYCLE BLOCKED (EARLY): MIN={0}, MAX={1} already completed (lastCompletedMin={2}, lastCompletedMax={3})", 
+                     newMinPrice, prevConfirmedMax, lastCompletedMin, lastCompletedMax)
+                // НЕ меняем systemState — остаёмся в WAITING_RESET
+                // Очищаем pendingMax чтобы он не был подтверждён
+                hasPendingMax := false
+                pendingMaxPrice := na
+                pendingMaxBar := na
+                pendingMaxUsesBody := false
+                preservePendingMax := false
             else
-                confirmedMax := na
-                confirmedMaxBar := na
+                // Продолжаем с изменениями только если цикл НЕ завершён
+                finalMinBar = useOldMin ? prevConfirmedMinBar : newMinBarAbsolute
+                
+                // Проверяем фитиль только если используем новый MIN (не старый)
+                if not useOldMin
+                    wickPctNew = getLowerWickPercent(newMinBarOffset)
+                    if wickPctNew > wickThreshold
+                        problemCandleBodyMin = math.min(open[newMinBarOffset], close[newMinBarOffset])
+                        foundBetterMin = false
+                        
+                        for i = 1 to 5
+                            checkIdx = newMinBarOffset + i
+                            if checkIdx < waitingResetLookback
+                                neighborWick = getLowerWickPercent(checkIdx)
+                                if neighborWick <= wickThreshold and low[checkIdx] < problemCandleBodyMin
+                                    newMinBarOffset := checkIdx
+                                    newMinPrice := low[checkIdx]
+                                    finalMinBar := bar_index - newMinBarOffset
+                                    foundBetterMin := true
+                                    break
+                            checkIdxR = newMinBarOffset - i
+                            if checkIdxR >= 0
+                                neighborWickR = getLowerWickPercent(checkIdxR)
+                                if neighborWickR <= wickThreshold and low[checkIdxR] < problemCandleBodyMin
+                                    newMinBarOffset := checkIdxR
+                                    newMinPrice := low[checkIdxR]
+                                    finalMinBar := bar_index - newMinBarOffset
+                                    foundBetterMin := true
+                                    break
+                        
+                        if not foundBetterMin
+                            newMinPrice := problemCandleBodyMin
+                            newMinUsesBody := true
+                
+                // Начинаем новый цикл
+                currentCycleId := currentCycleId + 1
+                confirmedMin := newMinPrice
+                confirmedMinBar := finalMinBar
+                minUsesBody := useOldMin ? false : newMinUsesBody  // Старый MIN уже был проверен
+                
+                // ВАЖНО: Если используем старый MIN И был подтверждённый MAX в предыдущем цикле,
+                // сохраняем его как PENDING MAX (нужно снова дождаться касания 0.618)
+                if useOldMin and not na(prevConfirmedMax) and prevConfirmedMax > 0
+                    // Сохраняем старый MAX как PENDING (не CONFIRMED!)
+                    pendingMaxPrice := prevConfirmedMax
+                    pendingMaxBar := prevConfirmedMaxBar
+                    pendingMaxUsesBody := false  // Старый MAX уже был проверен
+                    hasPendingMax := true
+                    preservePendingMax := true   // ВАЖНО: Не сбрасывать в doResetOrders!
+                    confirmedMax := na  // НЕ confirmed - ждём подтверждения
+                    confirmedMaxBar := na
+                    // Барьер для нового перехая
+                    confirmedMaxRealHigh := prevConfirmedMax
+                    // maxSearchStartBar сбрасываем на MIN чтобы искать перехаи от MIN
+                    maxSearchStartBar := finalMinBar
+                    
+                    // Расчёт уровня 0.618 для подтверждения
+                    expectedFib618OldMax = newMinPrice + (prevConfirmedMax - newMinPrice) * 0.618
+                    log.info("════════════════════════════════════════════════════════════")
+                    log.info("📊 [MAX EVENT] TYPE: KEEPING OLD MAX - NEW PENDING MAX")
+                    log.info("📊 [MAX EVENT] REASON: Using old MIN, preserving prevConfirmedMax")
+                    log.info("📊 [MAX EVENT] PENDING MAX: {0} at bar {1}", prevConfirmedMax, prevConfirmedMaxBar)
+                    log.info("📊 [MAX EVENT] MIN: {0} at bar {1}", newMinPrice, finalMinBar)
+                    log.info("📊 [MAX EVENT] Level 0.618 for confirmation: {0}", expectedFib618OldMax)
+                    log.info("📊 [MAX EVENT] STATUS: Waiting for price to touch 0.618 level")
+                    log.info("📊 [MAX EVENT] preservePendingMax SET to TRUE - will survive doResetOrders")
+                    log.info("════════════════════════════════════════════════════════════")
+                else
+                    confirmedMax := na
+                    confirmedMaxBar := na
+                
+                // ВАЖНО: При использовании старого MIN (isCase2), нужно обновить searchStartBar
+                // на бар этого MIN, чтобы он не был отклонён как "невалидный" в STATE_WAITING_GROWTH
+                if useOldMin
+                    searchStartBar := finalMinBar  // Разрешаем использовать старый MIN
+                    log.info("🔧 searchStartBar updated to finalMinBar={0} for old MIN", finalMinBar)
+                // При использовании нового MIN - searchStartBar остаётся равным бару продажи
+                systemState := STATE_WAITING_GROWTH
+                sellCount := 0
+                touchedZone06_07 := false
+                position1Open := false
+                position2Open := false
+                position3Open := false
+                doResetOrders := true
+                
+                // ВАЖНО: Проверяем, это тот же MIN/MAX что был при SELL на Этапе 1
+                // Если да - продолжаем на Этапе 2, если нет - сброс на Этап 1
+                isSameMinAsSold = useOldMin and not na(lastSoldMin) and math.abs(newMinPrice - lastSoldMin) < 0.0001
+                isSameMaxAsSold = useOldMin and not na(lastSoldMax) and not na(prevConfirmedMax) and math.abs(prevConfirmedMax - lastSoldMax) < 0.0001
+                
+                if isSameMinAsSold and isSameMaxAsSold
+                    // Тот же MIN и MAX что при SELL на Этапе 1 - продолжаем на Этапе 2
+                    tradingStage := 2
+                    orderLevel1 := 0.5
+                    orderLevel2 := 0.382
+                    orderLevel3 := 0.236
+                    sellLevel1 := 0.618
+                    sellLevel2 := 0.5
+                    sellLevel3 := 0.382
+                    cycleHadSell := false
+                    // НЕ сбрасываем lastSoldMin/Max - они нужны для дальнейших проверок
+                    log.info("📊 SAME MIN/MAX AS SOLD: continuing on Stage 2, cycleId={0}", currentCycleId)
+                else
+                    // Новый MIN или MAX - сброс на Этап 1
+                    tradingStage := 1
+                    orderLevel1 := 0.618
+                    orderLevel2 := 0.5
+                    orderLevel3 := 0.382
+                    sellLevel1 := 0.786
+                    sellLevel2 := 0.618
+                    sellLevel3 := 0.5
+                    cycleHadSell := false
+                    lastSoldMin := na
+                    lastSoldMax := na
+                    // Новый MIN или MAX — сбрасываем завершённый Фибо
+                    lastCompletedMin := na
+                    lastCompletedMax := na
+                    log.info("🔄 NEW CYCLE: reset to Stage 1, cycleId={0}", currentCycleId)
             
-            // ВАЖНО: При использовании старого MIN (isCase2), нужно обновить searchStartBar
-            // на бар этого MIN, чтобы он не был отклонён как "невалидный" в STATE_WAITING_GROWTH
-            if useOldMin
-                searchStartBar := finalMinBar  // Разрешаем использовать старый MIN
-                log.info("🔧 searchStartBar updated to finalMinBar={0} for old MIN", finalMinBar)
-            // При использовании нового MIN - searchStartBar остаётся равным бару продажи
-            systemState := STATE_WAITING_GROWTH
-            sellCount := 0
-            touchedZone06_07 := false
-            position1Open := false
-            position2Open := false
-            position3Open := false
-            doResetOrders := true
+                // Удаляем старые Fibo элементы с графика (только если не сохраняем историю)
+                if not showAllFiboHistory
+                    box.delete(box_1_000)
+                    box.delete(box_0_786)
+                    box.delete(box_0_618)
+                    box.delete(box_0_500)
+                    box.delete(box_0_382)
+                    box.delete(box_0_236)
+                    label.delete(label_fib_1_000)
+                    label.delete(label_fib_0_618)
+                    label.delete(label_fib_0_500)
+                    label.delete(label_fib_0_382)
+                    label.delete(label_fib_0_236)
+                    label.delete(label_min)
+                    label.delete(label_max)
             
-            // ВАЖНО: Сброс на Этап 1 для нового цикла
-            tradingStage := 1
-            orderLevel1 := 0.618
-            orderLevel2 := 0.5
-            orderLevel3 := 0.382
-            sellLevel1 := 0.786
-            sellLevel2 := 0.618
-            sellLevel3 := 0.5
-            cycleHadSell := false
-            lastSoldMin := na
-            lastSoldMax := na
+                box_1_000 := na
+                box_0_786 := na
+                box_0_618 := na
+                box_0_500 := na
+                box_0_382 := na
+                box_0_236 := na
+                label_fib_1_000 := na
+                label_fib_0_618 := na
+                label_fib_0_500 := na
+                label_fib_0_382 := na
+                label_fib_0_236 := na
+                label_min := na
+                label_max := na
+                fiboWasDrawn := false
+                drawnCycleId := -1
+                drawnMaxBar := na
+                prevConfirmedMax := na
+                prevConfirmedMin := na
+                prevConfirmedMaxBar := na
+                prevConfirmedMinBar := na
             
-            // Удаляем старые Fibo элементы с графика (только если не сохраняем историю)
-            if not showAllFiboHistory
-                box.delete(box_1_000)
-                box.delete(box_0_786)
-                box.delete(box_0_618)
-                box.delete(box_0_500)
-                box.delete(box_0_382)
-                box.delete(box_0_236)
-                label.delete(label_fib_1_000)
-                label.delete(label_fib_0_618)
-                label.delete(label_fib_0_500)
-                label.delete(label_fib_0_382)
-                label.delete(label_fib_0_236)
-                label.delete(label_min)
-                label.delete(label_max)
-            
-            box_1_000 := na
-            box_0_786 := na
-            box_0_618 := na
-            box_0_500 := na
-            box_0_382 := na
-            box_0_236 := na
-            label_fib_1_000 := na
-            label_fib_0_618 := na
-            label_fib_0_500 := na
-            label_fib_0_382 := na
-            label_fib_0_236 := na
-            label_min := na
-            label_max := na
-            fiboWasDrawn := false
-            drawnCycleId := -1
-            drawnMaxBar := na
-            prevConfirmedMax := na
-            prevConfirmedMin := na
-            prevConfirmedMaxBar := na
-            prevConfirmedMinBar := na
-            
-            log.info("🎯 NEW CYCLE FROM WAITING_RESET: min={0}, minBar={1}, usesBody={2}, searchStartBar={3}, hasPendingMax={4}, pendingMax={5}", 
-                 confirmedMin, confirmedMinBar, minUsesBody, na(searchStartBar) ? -1 : searchStartBar, hasPendingMax, hasPendingMax ? pendingMaxPrice : 0.0)
+                log.info("🎯 NEW CYCLE FROM WAITING_RESET: min={0}, minBar={1}, usesBody={2}, searchStartBar={3}, hasPendingMax={4}, pendingMax={5}", 
+                     confirmedMin, confirmedMinBar, minUsesBody, na(searchStartBar) ? -1 : searchStartBar, hasPendingMax, hasPendingMax ? pendingMaxPrice : 0.0)
 
 // ============================================================================
 // ОТРИСОВКА УРОВНЕЙ FIBONACCI
@@ -2382,10 +2567,9 @@ if showFibLines and canBuildFibo
             box_1_000 := box.new(startBar, fib_1_000 + boxHeight/4, endBar, fib_1_000 - boxHeight/4, 
                  border_color=color.new(color.blue, alphaSecondary), bgcolor=color.new(color.blue, 70), border_width=1)
             
-            // 78.6% - уровень SELL (всегда показываем если есть открытые позиции)
-            if position1Open or position2Open or position3Open
-                box_0_786 := box.new(startBar, fib_0_786 + boxHeight/2, endBar, fib_0_786 - boxHeight/2, 
-                     border_color=color.new(color.purple, 30), bgcolor=color.new(color.purple, 60), border_width=1)
+            // 78.6% - уровень SELL (ВСЕГДА показываем как ориентир для продажи)
+            box_0_786 := box.new(startBar, fib_0_786 + boxHeight/2, endBar, fib_0_786 - boxHeight/2, 
+                 border_color=color.new(color.purple, 30), bgcolor=color.new(color.purple, 60), border_width=1)
             
             // Уровни BUY - показываем только если позиция открыта
             if position1Open
@@ -2593,7 +2777,7 @@ if showInfo and barstate.islast
     totalUnrealizedPL = unrealizedPL1 + unrealizedPL2 + unrealizedPL3
     
     // Количество открытых позиций
-    openPositionsCount = (position1Open ? 1 : 0) + (position2Open ? 1 : 0) + (position3Open ? 1 : 0)
+    openPositionsCountTable = (position1Open ? 1 : 0) + (position2Open ? 1 : 0) + (position3Open ? 1 : 0)
     
     // Общий P&L (реализованный + нереализованный)
     totalPL = totalProfitLoss + totalUnrealizedPL
@@ -2615,7 +2799,7 @@ if showInfo and barstate.islast
     // Нереализованный P&L (открытые позиции)
     uplColor = totalUnrealizedPL >= 0 ? color.lime : color.orange
     uplSign = totalUnrealizedPL >= 0 ? "+" : ""
-    uplText = openPositionsCount > 0 ? uplSign + str.tostring(totalUnrealizedPL, "#.##") + " (" + str.tostring(openPositionsCount) + " поз.)" : "— (нет)"
+    uplText = openPositionsCountTable > 0 ? uplSign + str.tostring(totalUnrealizedPL, "#.##") + " (" + str.tostring(openPositionsCountTable) + " поз.)" : "— (нет)"
     table.cell(infoTable, 0, 3, "📦 Нереализ. P&L", text_size=size.small, text_color=uplColor)
     table.cell(infoTable, 1, 3, uplText, text_size=size.small, text_color=uplColor)
     
