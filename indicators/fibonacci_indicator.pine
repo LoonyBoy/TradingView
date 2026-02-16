@@ -219,6 +219,58 @@ getUpperWickPercentCandle(idx) =>
     bodyTop > 0 ? ((high[idx] - bodyTop) / bodyTop) * 100 : 0.0
 
 // ============================================================================
+// ФОРМАТИРОВАНИЕ ЦЕНЫ (для мем-коинов с очень маленькими ценами)
+// ============================================================================
+
+// Функция форматирования цены с полным отображением всех значащих цифр
+formatPrice(float price) =>
+    if na(price) or price == 0
+        "0"
+    else if price >= 1
+        str.tostring(price, "#.####")
+    else if price >= 0.0001
+        str.tostring(price, "#.########")
+    else if price >= 0.00000001
+        str.tostring(price, "#.############")
+    else
+        str.tostring(price, "#.################")
+
+// Безопасное сравнение цен для маленьких чисел (meme-coins)
+// Использует процентное сравнение вместо прямого < для избежания проблем с точностью float
+isLowerPrice(float price, float reference) =>
+    if na(price) or na(reference) or reference == 0
+        false
+    else
+        diffPercent = ((price - reference) / reference) * 100
+        diffPercent < -0.01  // Цена ниже хотя бы на 0.01%
+
+// Безопасное сравнение: price > reference
+isHigherPrice(float price, float reference) =>
+    if na(price) or na(reference) or reference == 0
+        false
+    else
+        diffPercent = ((price - reference) / reference) * 100
+        diffPercent > 0.01  // Цена выше хотя бы на 0.01%
+
+// Безопасное сравнение: price <= level (для проверки касания уровня BUY)
+// Возвращает true если цена коснулась или ушла ниже уровня
+isLowerOrEqual(float price, float level) =>
+    if na(price) or na(level) or level == 0
+        false
+    else
+        diffPercent = ((price - level) / level) * 100
+        diffPercent <= 0.01  // Цена на уровне или ниже (с допуском 0.01%)
+
+// Безопасное сравнение: price >= level (для проверки касания уровня SELL)
+// Возвращает true если цена коснулась или ушла выше уровня
+isHigherOrEqual(float price, float level) =>
+    if na(price) or na(level) or level == 0
+        false
+    else
+        diffPercent = ((price - level) / level) * 100
+        diffPercent >= -0.01  // Цена на уровне или выше (с допуском 0.01%)
+
+// ============================================================================
 // ПОИСК ОПТИМАЛЬНОГО МИНИМУМА (с учетом тени)
 // ============================================================================
 
@@ -293,6 +345,7 @@ var int confirmedMinBar = na
 var float confirmedMax = na
 var int confirmedMaxBar = na
 var float confirmedMaxRealHigh = na  // Реальный high бара с MAX (для сравнения при перехае)
+var int maxConfirmationBar = na  // Бар на котором MAX был подтверждён (BUY разрешён только на следующем баре)
 var bool minUsesBody = false
 var bool maxUsesBody = false
 
@@ -555,7 +608,7 @@ if isAfterListingPeriod and (systemState == STATE_SEARCHING_MIN or systemState =
     localMaxInRange = dynamicLookback >= 1 ? ta.highest(high, dynamicLookback) : high
     
     // Условие 1: MIN ниже предыдущего (или первый раз - prevConfirmedMin = na)
-    isCondition1 = na(prevConfirmedMin) or minPrice < prevConfirmedMin
+    isCondition1 = na(prevConfirmedMin) or isLowerPrice(minPrice, prevConfirmedMin)
     
     // Условие 2: MIN выше предыдущего MIN, но MAX ниже предыдущего MAX (при 100%+ росте)
     growthForCondition2 = minPrice > 0 ? ((localMaxInRange - minPrice) / minPrice) * 100 : 0
@@ -601,8 +654,8 @@ if isAfterListingPeriod and (systemState == STATE_SEARCHING_MIN or systemState =
             prevConfirmedMax := na
             prevConfirmedMinBar := na
             prevConfirmedMaxBar := na
-        else if na(confirmedMin) or minPrice < confirmedMin
-            // Для ПЕРВОГО цикла с ростом 100% - сразу логируем что нашли
+        else if na(confirmedMin) or isLowerPrice(minPrice, confirmedMin)
+            // Для ПЕРВОГО цикла с ростом 100% - сразу логируем что нашлиотли
             if isFirstCycleEver and initialGrowthFromMin >= minGrowthPercent
                 log.info("🎯 FIRST CYCLE MIN with 100%+ growth: price={0}, minBar={1}, growth={2}%", minPrice, minBarAbsolute, initialGrowthFromMin)
             
@@ -647,10 +700,19 @@ if systemState == STATE_WAITING_GROWTH
         // Если тень большая - используем тело свечи, иначе low
         currentBarMinPrice = currentBarWick > wickThreshold ? currentBarBodyMin : low
         
-        if currentBarMinPrice < confirmedMin
+        // Используем безопасное сравнение для маленьких чисел (meme-coins)
+        isActuallyLower = isLowerPrice(currentBarMinPrice, confirmedMin)
+        
+        // DEBUG: показываем сравнение MIN на каждом баре
+        priceDiffPercent = confirmedMin != 0 ? ((currentBarMinPrice - confirmedMin) / confirmedMin) * 100 : 0
+        if bar_index % 10 == 0 or currentBarMinPrice <= confirmedMin * 1.05  // каждый 10-й бар или близко к MIN
+            log.info("🔍 WAITING_GROWTH bar={0}: checkPrice={1}, confirmedMin={2}, diffPct={3}%, isLower={4}", 
+                 bar_index, formatPrice(currentBarMinPrice), formatPrice(confirmedMin), priceDiffPercent, isActuallyLower)
+        
+        if isActuallyLower
             // Цена упала НИЖЕ текущего MIN - обновляем MIN на новый
-            log.info("📉 NEW LOWER MIN in WAITING_GROWTH: old={0}, new={1}, bar={2}, wick={3}%, useBody={4}", 
-                 confirmedMin, currentBarMinPrice, bar_index, currentBarWick, currentBarWick > wickThreshold)
+            log.info("📉 NEW LOWER MIN in WAITING_GROWTH: old={0}, new={1}, bar={2}, wick={3}%, useBody={4}, diffPct={5}%", 
+                 formatPrice(confirmedMin), formatPrice(currentBarMinPrice), bar_index, currentBarWick, currentBarWick > wickThreshold, priceDiffPercent)
             confirmedMin := currentBarMinPrice
             confirmedMinBar := bar_index
             minUsesBody := currentBarWick > wickThreshold
@@ -827,6 +889,25 @@ else if systemState == STATE_FIBO_ACTIVE and not na(confirmedMin) and low < conf
     // Есть открытые позиции и стоп-лосс выключен - НЕ делаем FULL RESET
     log.info("⚠️ FULL RESET BLOCKED: low={0} < min*0.98={1}, but positions open and stopLoss disabled", low, confirmedMin * 0.98)
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ОБНОВЛЕНИЕ MIN НА БОЛЕЕ НИЗКИЙ В STATE_FIBO_ACTIVE (если нет открытых позиций)
+// ═══════════════════════════════════════════════════════════════════════════
+// Если появляется новый более низкий MIN и нет открытых позиций — обновляем MIN
+// и пересчитываем уровни Фибоначчи. Это позволяет отслеживать лучшую точку входа.
+if systemState == STATE_FIBO_ACTIVE and not na(confirmedMin) and not hasOpenPositionsForReset
+    currentBarWickMin = getLowerWickPercent(0)
+    currentBarBodyMinFibo = math.min(open, close)
+    currentBarMinPriceFibo = currentBarWickMin > wickThreshold ? currentBarBodyMinFibo : low
+    
+    // Проверяем: цена ниже текущего MIN, но не настолько низко чтобы сработал FULL RESET (2%)
+    if isLowerPrice(currentBarMinPriceFibo, confirmedMin) and low >= confirmedMin * 0.98
+        log.info("📉 MIN UPDATED in FIBO_ACTIVE: old={0}, new={1}, bar={2}, wick={3}%, useBody={4}", 
+             confirmedMin, currentBarMinPriceFibo, bar_index, currentBarWickMin, currentBarWickMin > wickThreshold)
+        confirmedMin := currentBarMinPriceFibo
+        confirmedMinBar := bar_index
+        minUsesBody := currentBarWickMin > wickThreshold
+        forceRedraw := true  // Перерисовать Фибо с новым MIN
+
 // ============================================================================
 // ФУНКЦИЯ РАСЧЕТА УРОВНЕЙ ФИБОНАЧЧИ (определена здесь для использования в pending MAX)
 // ============================================================================
@@ -1000,6 +1081,7 @@ if hasPendingMax and systemState == STATE_FIBO_ACTIVE and not hasOpenPositions
         pendingMaxPrice := na
         pendingMaxBar := na
         pendingMaxUsesBody := false
+        maxConfirmationBar := bar_index  // Запоминаем бар подтверждения MAX
         
         // Очищаем локальные MAX - они больше не нужны после подтверждения
         clearLocalMaxArrays()
@@ -1066,11 +1148,11 @@ if hasPendingMax and systemState == STATE_FIBO_ACTIVE and not hasOpenPositions
                         candidateMinPrice := math.min(open[i], close[i])
                     
                     // Условие 1: MIN ниже текущего
-                    isCond1Fibo = candidateMinPrice < confirmedMin
+                    isCond1Fibo = isLowerPrice(candidateMinPrice, confirmedMin)
                     
                     // Условие 2: MIN выше текущего, но новый MAX ниже старого MAX + рост 100%
                     growthFibo = candidateMinPrice > 0 ? ((currentMaxForCheck - candidateMinPrice) / candidateMinPrice) * 100 : 0
-                    isCond2Fibo = candidateMinPrice > confirmedMin and currentMaxForCheck < oldMaxForCheck and growthFibo >= minGrowthPercent
+                    isCond2Fibo = isHigherPrice(candidateMinPrice, confirmedMin) and currentMaxForCheck < oldMaxForCheck and growthFibo >= minGrowthPercent
                     
                     if isCond1Fibo
                         // Только если MIN действительно ниже
@@ -1268,25 +1350,28 @@ if canBuildFibo and not touchedZone06_07
 // ТОРГОВАЯ ЛОГИКА
 // ============================================================================
 
-// BUY срабатывает при касании уровня
-touchOrder1 = canBuildFibo and not na(order1Price) and low <= order1Price
-touchOrder2 = canBuildFibo and not na(order2Price) and low <= order2Price
-touchOrder3 = canBuildFibo and not na(order3Price) and low <= order3Price
+// BUY срабатывает при касании уровня (используем безопасное сравнение для meme-coins)
+touchOrder1 = canBuildFibo and not na(order1Price) and isLowerOrEqual(low, order1Price)
+touchOrder2 = canBuildFibo and not na(order2Price) and isLowerOrEqual(low, order2Price)
+touchOrder3 = canBuildFibo and not na(order3Price) and isLowerOrEqual(low, order3Price)
 
 // Дебаг: логируем условия для BUY ордеров
-if systemState == STATE_FIBO_ACTIVE and (low <= order1Price or low <= order2Price or low <= order3Price)
-    log.info("📊 BUY CHECK bar={0}: low={1}, o2={2}", bar_index, low, order2Price)
+if systemState == STATE_FIBO_ACTIVE and (isLowerOrEqual(low, order1Price) or isLowerOrEqual(low, order2Price) or isLowerOrEqual(low, order3Price))
+    log.info("📊 BUY CHECK bar={0}: low={1}, o1={2}, o2={3}, o3={4}", bar_index, formatPrice(low), formatPrice(order1Price), formatPrice(order2Price), formatPrice(order3Price))
+    log.info("📊 BUY FIBO: min={0}, max={1}", formatPrice(confirmedMin), formatPrice(effectiveMax))
     log.info("📊 Positions: pos1={0}, pos2={1}, pos3={2}", position1Open, position2Open, position3Open)
-    // Дебаг: показываем какие уровни касаются
-    touch1 = low <= order1Price
-    touch2 = low <= order2Price
-    touch3 = low <= order3Price
-    log.info("📊 Touches: t1={0}, t2={1}, t3={2}, stage={3}", touch1, touch2, touch3, tradingStage)
+    // Дебаг: показываем какие уровни касаются (с безопасным сравнением)
+    touch1 = isLowerOrEqual(low, order1Price)
+    touch2 = isLowerOrEqual(low, order2Price)
+    touch3 = isLowerOrEqual(low, order3Price)
+    // Показываем процентную разницу для уровня 61.8%
+    diff1Pct = order1Price != 0 ? ((low - order1Price) / order1Price) * 100 : 0.0
+    log.info("📊 Touches: t1={0}, t2={1}, t3={2}, stage={3}, diff1%={4}", touch1, touch2, touch3, tradingStage, str.tostring(diff1Pct, "#.##"))
 
-// SELL срабатывает сразу при касании уровня (без ожидания закрытия бара)
-touchSell1 = canBuildFibo and not na(sell1Price) and high >= sell1Price
-touchSell2 = canBuildFibo and not na(sell2Price) and high >= sell2Price
-touchSell3 = canBuildFibo and not na(sell3Price) and high >= sell3Price
+// SELL срабатывает сразу при касании уровня (используем безопасное сравнение для meme-coins)
+touchSell1 = canBuildFibo and not na(sell1Price) and isHigherOrEqual(high, sell1Price)
+touchSell2 = canBuildFibo and not na(sell2Price) and isHigherOrEqual(high, sell2Price)
+touchSell3 = canBuildFibo and not na(sell3Price) and isHigherOrEqual(high, sell3Price)
 
 var label buyLabel1 = na
 var label buyLabel2 = na
@@ -1299,8 +1384,8 @@ currentGrowthPct = confirmedMin > 0 ? ((effectiveMax - confirmedMin) / confirmed
 stageText = tradingStage == 1 ? "Этап 1 (0.618/0.5/0.382)" : "Этап 2 (0.5/0.382/0.236)"
 buyTooltip = "Этап: " + stageText +
      "\n───────────" +
-     "\nMIN: " + str.tostring(nz(confirmedMin, 0), "#.####") + " (бар " + str.tostring(nz(confirmedMinBar, 0)) + ")" +
-     "\nMAX: " + str.tostring(nz(effectiveMax, 0), "#.####") + " (бар " + str.tostring(nz(effectiveMaxBar, 0)) + ")" +
+     "\nMIN: " + formatPrice(confirmedMin) + " (бар " + str.tostring(nz(confirmedMinBar, 0)) + ")" +
+     "\nMAX: " + formatPrice(effectiveMax) + " (бар " + str.tostring(nz(effectiveMaxBar, 0)) + ")" +
      (hasPendingMax ? " ⏳PENDING" : "") +
      "\nРост: " + str.tostring(currentGrowthPct, "#.#") + "%"
 
@@ -1325,12 +1410,6 @@ isCompletedFibo = not na(lastCompletedMin) and not na(lastCompletedMax) and
 // На Этапе 2 разрешаем покупать на том же Фибо (если он не завершён полностью)
 isNewFibo = (tradingStage == 2 or not isSameFiboAsSold) and not isCompletedFibo
 
-// Дебаг BUY2 - когда цена касается уровня 0.5 но позиция не открыта
-if low <= order2Price and not position2Open and systemState == STATE_FIBO_ACTIVE and position1Open
-    log.info("🔍 BUY2 DEBUG bar={0}: low={1}, order2Price={2}", bar_index, low, order2Price)
-    log.info("🔍 BUY2 CONDITIONS: growthValid={0}, canBuyInCycle={1}, isNewFibo={2}, cycleHadSell={3}", growthIsValid, canBuyInCycle, isNewFibo, cycleHadSell)
-    log.info("🔍 BUY2 FIBO: lastSoldMin={0}, lastSoldMax={1}, min={2}, effMax={3}", lastSoldMin, lastSoldMax, confirmedMin, effectiveMax)
-
 // ============================================================================
 // BUY ОРДЕРА: Рыночные ордера при касании уровня
 // ============================================================================
@@ -1345,16 +1424,30 @@ canBuy3OnThisBar = position2Open or not position2Open  // BUY3 можно есл
 
 // ВАЖНО: Не покупаем на том же уровне где уже есть открытая позиция
 // Это предотвращает дубли когда после обновления MAX уровни сдвигаются
-priceThreshold = 0.0001  // Минимальная разница в цене
-buy2NotSamePriceAsBuy1 = not position1Open or na(entryPrice1) or math.abs(order2Price - entryPrice1) > priceThreshold
-buy3NotSamePriceAsBuy1 = not position1Open or na(entryPrice1) or math.abs(order3Price - entryPrice1) > priceThreshold
-buy3NotSamePriceAsBuy2 = not position2Open or na(entryPrice2) or math.abs(order3Price - entryPrice2) > priceThreshold
+// Используем процентную разницу вместо абсолютной для маленьких цен (meme-coins)
+priceThresholdPct = 1.0  // Минимальная разница в цене - 1%
+priceDiff2vs1 = na(entryPrice1) or entryPrice1 == 0 ? 100.0 : math.abs((order2Price - entryPrice1) / entryPrice1) * 100
+priceDiff3vs1 = na(entryPrice1) or entryPrice1 == 0 ? 100.0 : math.abs((order3Price - entryPrice1) / entryPrice1) * 100
+priceDiff3vs2 = na(entryPrice2) or entryPrice2 == 0 ? 100.0 : math.abs((order3Price - entryPrice2) / entryPrice2) * 100
+buy2NotSamePriceAsBuy1 = not position1Open or na(entryPrice1) or priceDiff2vs1 > priceThresholdPct
+buy3NotSamePriceAsBuy1 = not position1Open or na(entryPrice1) or priceDiff3vs1 > priceThresholdPct
+buy3NotSamePriceAsBuy2 = not position2Open or na(entryPrice2) or priceDiff3vs2 > priceThresholdPct
 
 // ВАЖНО: Торговля начинается только когда MAX подтверждён (нет PENDING MAX)
 maxIsConfirmed = not hasPendingMax
+// ВАЖНО: Покупка разрешена только на СЛЕДУЮЩЕМ баре после подтверждения MAX
+canBuyAfterMaxConfirmation = not na(maxConfirmationBar) and bar_index > maxConfirmationBar
+
+// Дебаг BUY2 - когда цена касается уровня 0.5 но позиция не открыта
+if low <= order2Price and not position2Open and systemState == STATE_FIBO_ACTIVE and position1Open
+    log.info("🔍 BUY2 DEBUG bar={0}: low={1}, order2Price={2}", bar_index, formatPrice(low), formatPrice(order2Price))
+    log.info("🔍 BUY2 CONDITIONS: growthValid={0}, canBuyInCycle={1}, isNewFibo={2}, cycleHadSell={3}", growthIsValid, canBuyInCycle, isNewFibo, cycleHadSell)
+    log.info("🔍 BUY2 FIBO: lastSoldMin={0}, lastSoldMax={1}, min={2}, effMax={3}", formatPrice(lastSoldMin), formatPrice(lastSoldMax), formatPrice(confirmedMin), formatPrice(effectiveMax))
+    log.info("🔍 BUY2 EXTRA: touchOrder2={0}, canBuildFibo={1}, maxConfirmed={2}, canBuyAfterMax={3}", touchOrder2, canBuildFibo, maxIsConfirmed, canBuyAfterMaxConfirmation)
+    log.info("🔍 BUY2 EXTRA2: buy2NotSamePriceAsBuy1={0}, entryPrice1={1}, priceDiffPct={2}%", buy2NotSamePriceAsBuy1, formatPrice(entryPrice1), priceDiff2vs1)
 
 // BUY1: Покупка при касании уровня 0.618
-if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and growthIsValid and canBuyInCycle and isNewFibo and maxIsConfirmed
+if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and growthIsValid and canBuyInCycle and isNewFibo and maxIsConfirmed and canBuyAfterMaxConfirmation
     // Strategy Tester: рыночный ордер на текущем баре (process_orders_on_close=true)
     strategy.entry("BUY1_" + str.tostring(currentCycleId), strategy.long, qty=orderAmount1/order1Price, comment="BUY1 $" + str.tostring(orderAmount1, "#"))
     // Стоп-лосс на уровне MIN (0%) - БЕЗ индивидуального TP!
@@ -1366,7 +1459,7 @@ if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and gr
         buyLevel1 = tradingStage == 1 ? "61.8%" : "50%"
         buyTooltip1 = "═══ BUY1 ═══" +
              "\nУровень: " + buyLevel1 +
-             "\nЦена: " + str.tostring(nz(order1Price, 0), "#.########") +
+             "\nЦена: " + formatPrice(order1Price) +
              "\nСумма: $" + str.tostring(orderAmount1, "#") +
              "\nДата: " + buyDate1 +
              "\n───────────" +
@@ -1388,7 +1481,9 @@ if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and gr
     entryMax1 := effectiveMax
     entryMinBar1 := confirmedMinBar
     entryMaxBar1 := effectiveMaxBar
-    log.info("✅ BUY1: bar={0}, price={1}, cycleId={2}, stage={3}, pendingMax={4}", bar_index, order1Price, currentCycleId, tradingStage, hasPendingMax)
+    log.info("✅ BUY1: bar={0}, price={1}, cycleId={2}, stage={3}, pendingMax={4}", bar_index, formatPrice(order1Price), currentCycleId, tradingStage, hasPendingMax)
+else if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and maxIsConfirmed and not canBuyAfterMaxConfirmation
+    log.warning("⛔ BUY1 BLOCKED: same bar as MAX confirmation (bar={0}, maxConfirmationBar={1})", bar_index, maxConfirmationBar)
 else if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and not maxIsConfirmed
     log.warning("⛔ BUY1 BLOCKED: MAX not confirmed (pending price={0})", pendingMaxPrice)
 else if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE and not growthIsValid
@@ -1402,7 +1497,7 @@ else if touchOrder1 and not position1Open and systemState == STATE_FIBO_ACTIVE a
         log.warning("⛔ BUY1 BLOCKED: isSameFiboAsSold (min={0}, max={1}, lastSoldMin={2}, lastSoldMax={3})", confirmedMin, effectiveMax, lastSoldMin, lastSoldMax)
 
 // BUY2: Покупка при касании уровня 0.5
-if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE and growthIsValid and canBuyInCycle and isNewFibo and canBuy2OnThisBar and buy2NotSamePriceAsBuy1 and maxIsConfirmed
+if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE and growthIsValid and canBuyInCycle and isNewFibo and canBuy2OnThisBar and buy2NotSamePriceAsBuy1 and maxIsConfirmed and canBuyAfterMaxConfirmation
     // Strategy Tester: рыночный ордер на текущем баре (process_orders_on_close=true)
     strategy.entry("BUY2_" + str.tostring(currentCycleId), strategy.long, qty=orderAmount2/order2Price, comment="BUY2 $" + str.tostring(orderAmount2, "#"))
     // Стоп-лосс на уровне MIN (0%) - БЕЗ индивидуального TP!
@@ -1414,7 +1509,7 @@ if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE and gr
         buyLevel2 = tradingStage == 1 ? "50%" : "38.2%"
         buyTooltip2 = "═══ BUY2 ═══" +
              "\nУровень: " + buyLevel2 +
-             "\nЦена: " + str.tostring(nz(order2Price, 0), "#.########") +
+             "\nЦена: " + formatPrice(order2Price) +
              "\nСумма: $" + str.tostring(orderAmount2, "#") +
              "\nДата: " + buyDate2 +
              "\n───────────" +
@@ -1436,7 +1531,7 @@ if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE and gr
     entryMax2 := effectiveMax
     entryMinBar2 := confirmedMinBar
     entryMaxBar2 := effectiveMaxBar
-    log.info("✅ BUY2: bar={0}, price={1}, cycleId={2}", bar_index, order2Price, currentCycleId)
+    log.info("✅ BUY2: bar={0}, price={1}, cycleId={2}", bar_index, formatPrice(order2Price), currentCycleId)
 else if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE and not growthIsValid
     log.warning("⛔ BUY2 BLOCKED: growth {0}% < {1}%", currentGrowthPct, minGrowthPercent)
 else if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE and not canBuyInCycle
@@ -1445,7 +1540,7 @@ else if touchOrder2 and not position2Open and systemState == STATE_FIBO_ACTIVE a
     log.warning("⛔ BUY2 BLOCKED: isSameFiboAsSold (min={0}, max={1}, lastSoldMin={2}, lastSoldMax={3})", confirmedMin, confirmedMax, lastSoldMin, lastSoldMax)
 
 // BUY3: Покупка при касании уровня 0.382
-if touchOrder3 and not position3Open and systemState == STATE_FIBO_ACTIVE and growthIsValid and canBuyInCycle and isNewFibo and canBuy3OnThisBar and buy3NotSamePriceAsBuy1 and buy3NotSamePriceAsBuy2 and maxIsConfirmed
+if touchOrder3 and not position3Open and systemState == STATE_FIBO_ACTIVE and growthIsValid and canBuyInCycle and isNewFibo and canBuy3OnThisBar and buy3NotSamePriceAsBuy1 and buy3NotSamePriceAsBuy2 and maxIsConfirmed and canBuyAfterMaxConfirmation
     // Strategy Tester: рыночный ордер на текущем баре (process_orders_on_close=true)
     strategy.entry("BUY3_" + str.tostring(currentCycleId), strategy.long, qty=orderAmount3/order3Price, comment="BUY3 $" + str.tostring(orderAmount3, "#"))
     // Стоп-лосс на уровне MIN (0%) - БЕЗ индивидуального TP!
@@ -1457,7 +1552,7 @@ if touchOrder3 and not position3Open and systemState == STATE_FIBO_ACTIVE and gr
         buyLevel3 = tradingStage == 1 ? "38.2%" : "23.6%"
         buyTooltip3 = "═══ BUY3 ═══" +
              "\nУровень: " + buyLevel3 +
-             "\nЦена: " + str.tostring(nz(order3Price, 0), "#.########") +
+             "\nЦена: " + formatPrice(order3Price) +
              "\nСумма: $" + str.tostring(orderAmount3, "#") +
              "\nДата: " + buyDate3 +
              "\n───────────" +
@@ -1479,7 +1574,7 @@ if touchOrder3 and not position3Open and systemState == STATE_FIBO_ACTIVE and gr
     entryMax3 := effectiveMax
     entryMinBar3 := confirmedMinBar
     entryMaxBar3 := effectiveMaxBar
-    log.info("✅ BUY3: bar={0}, price={1}, cycleId={2}", bar_index, order3Price, currentCycleId)
+    log.info("✅ BUY3: bar={0}, price={1}, cycleId={2}", bar_index, formatPrice(order3Price), currentCycleId)
 else if touchOrder3 and not position3Open and systemState == STATE_FIBO_ACTIVE and not growthIsValid
     log.warning("⛔ BUY3 BLOCKED: growth {0}% < {1}%", currentGrowthPct, minGrowthPercent)
 
@@ -1623,7 +1718,7 @@ if sellTriggered
         if sold3
             detailProfit := detailProfit + (str.length(detailProfit) > 0 ? "\n" : "") + "BUY3 $" + str.tostring(orderAmount3, "#") + ": " + (profit3_val >= 0 ? "+" : "") + str.tostring(profitPct3_val, "#.#") + "%"
         
-        sellTooltip = "SELL ALL @ " + str.tostring(nz(sellPrice, 0), "#.####") + " (" + sellLevelName + ")" +
+        sellTooltip = "SELL ALL @ " + formatPrice(sellPrice) + " (" + sellLevelName + ")" +
              "\nДата: " + sellDate +
              "\n───────────" +
              "\n" + detailProfit +
@@ -1991,11 +2086,11 @@ if systemState == STATE_WAITING_RESET
                     candidateMinPriceWR := math.min(open[i], close[i])
                 
                 // Условие 1: MIN ниже текущего
-                isCond1WR = candidateMinPriceWR < confirmedMin
+                isCond1WR = isLowerPrice(candidateMinPriceWR, confirmedMin)
                 
                 // Условие 2: MIN выше текущего, но новый MAX ниже старого MAX + рост 100%
                 growthWR = candidateMinPriceWR > 0 ? ((newMaxWR - candidateMinPriceWR) / candidateMinPriceWR) * 100 : 0
-                isCond2WR = candidateMinPriceWR > confirmedMin and newMaxWR < oldMaxWR and growthWR >= minGrowthPercent
+                isCond2WR = isHigherPrice(candidateMinPriceWR, confirmedMin) and newMaxWR < oldMaxWR and growthWR >= minGrowthPercent
                 
                 if isCond1WR
                     // Только если MIN действительно ниже
@@ -2435,7 +2530,7 @@ if showLabels and systemState == STATE_WAITING_GROWTH and not na(confirmedMin) a
     label.delete(label_waiting_min)
     waitingGrowth = ((high - confirmedMin) / confirmedMin) * 100
     label_waiting_min := label.new(confirmedMinBar, confirmedMin, 
-         "MIN\n" + str.tostring(confirmedMin, "#.####") + (minUsesBody ? "\n(body)" : "") + "\n⏳ " + str.tostring(waitingGrowth, "#.#") + "%", 
+         "MIN\\n" + formatPrice(confirmedMin) + (minUsesBody ? "\\n(body)" : "") + "\\n⏳ " + str.tostring(waitingGrowth, "#.#") + "%", 
          color=color.new(color.orange, 0), textcolor=color.white, style=label.style_label_up, size=size.small)
 else if systemState != STATE_WAITING_GROWTH and not na(label_waiting_min)
     label.delete(label_waiting_min)
@@ -2596,57 +2691,57 @@ if showFibLines and canBuildFibo
             // Проверяем что рост >= 100% перед отображением MAX
             growthIsEnough = growthPct >= minGrowthPercent
             tradeInfo = "═══ FIBONACCI INFO ═══" +
-                 "\nMIN: " + str.tostring(tooltipMin, "#.####") + " (бар " + str.tostring(tooltipMinBar) + ")" +
-                 "\nMAX: " + str.tostring(tooltipMax, "#.####") + " (бар " + str.tostring(tooltipMaxBar) + ")" +
+                 "\nMIN: " + formatPrice(tooltipMin) + " (бар " + str.tostring(tooltipMinBar) + ")" +
+                 "\nMAX: " + formatPrice(tooltipMax) + " (бар " + str.tostring(tooltipMaxBar) + ")" +
                  "\nРост: " + str.tostring(growthPct, "#.#") + "%" +
                  "\n═══ ОРДЕРА BUY ═══" +
-                 "\n• 61.8%: $" + str.tostring(orderAmount1, "#") + " @ " + str.tostring(nz(order1Price, 0), "#.####") + (position1Open ? " ✓ОТКРЫТ" : (position1WasBought ? " ✓ПРОДАН" : "")) +
-                 "\n• 50%: $" + str.tostring(orderAmount2, "#") + " @ " + str.tostring(nz(order2Price, 0), "#.####") + (position2Open ? " ✓ОТКРЫТ" : (position2WasBought ? " ✓ПРОДАН" : "")) +
-                 "\n• 38.2%: $" + str.tostring(orderAmount3, "#") + " @ " + str.tostring(nz(order3Price, 0), "#.####") + (position3Open ? " ✓ОТКРЫТ" : (position3WasBought ? " ✓ПРОДАН" : "")) +
+                 "\n• 61.8%: $" + str.tostring(orderAmount1, "#") + " @ " + formatPrice(order1Price) + (position1Open ? " ✓ОТКРЫТ" : (position1WasBought ? " ✓ПРОДАН" : "")) +
+                 "\n• 50%: $" + str.tostring(orderAmount2, "#") + " @ " + formatPrice(order2Price) + (position2Open ? " ✓ОТКРЫТ" : (position2WasBought ? " ✓ПРОДАН" : "")) +
+                 "\n• 38.2%: $" + str.tostring(orderAmount3, "#") + " @ " + formatPrice(order3Price) + (position3Open ? " ✓ОТКРЫТ" : (position3WasBought ? " ✓ПРОДАН" : "")) +
                  "\n═══ ОРДЕРА SELL ═══" +
-                 "\n• 78.6%: @ " + str.tostring(nz(sell1Price, 0), "#.####") +
-                 "\n• 61.8%: @ " + str.tostring(nz(sell2Price, 0), "#.####") +
-                 "\n• 50%: @ " + str.tostring(nz(sell3Price, 0), "#.####")
+                 "\n• 78.6%: @ " + formatPrice(sell1Price) +
+                 "\n• 61.8%: @ " + formatPrice(sell2Price) +
+                 "\n• 50%: @ " + formatPrice(sell3Price)
             
             if showFibLevels
                 // MAX уровень - всегда показываем
-                label_fib_1_000 := label.new(endBar, fib_1_000, "100% (" + str.tostring(fib_1_000, "#.####") + ")", 
+                label_fib_1_000 := label.new(endBar, fib_1_000, "100% (" + formatPrice(fib_1_000) + ")", 
                      color=color.new(color.blue, 80), textcolor=color.blue, style=label.style_label_left, size=size.small,
                      tooltip=tradeInfo)
                 // Уровни BUY - показываем только если позиция открыта
                 if position1Open
                     label_fib_0_618 := label.new(endBar, fib_0_618, "61.8% BUY ✓", 
                          color=color.new(color.lime, 50), textcolor=color.lime, style=label.style_label_left, size=size.small,
-                         tooltip=tradeInfo + "\n\n✓ BUY $" + str.tostring(orderAmount1, "#") + " @ " + str.tostring(nz(entryPrice1, order1Price), "#.####"))
+                         tooltip=tradeInfo + "\n\n✓ BUY $" + str.tostring(orderAmount1, "#") + " @ " + formatPrice(nz(entryPrice1, order1Price)))
                 if position2Open
                     label_fib_0_500 := label.new(endBar, fib_0_500, "50% BUY ✓", 
                          color=color.new(color.lime, 50), textcolor=color.lime, style=label.style_label_left, size=size.small,
-                         tooltip=tradeInfo + "\n\n✓ BUY $" + str.tostring(orderAmount2, "#") + " @ " + str.tostring(nz(entryPrice2, order2Price), "#.####"))
+                         tooltip=tradeInfo + "\n\n✓ BUY $" + str.tostring(orderAmount2, "#") + " @ " + formatPrice(nz(entryPrice2, order2Price)))
                 if position3Open
                     label_fib_0_382 := label.new(endBar, fib_0_382, "38.2% BUY ✓", 
                          color=color.new(color.lime, 50), textcolor=color.lime, style=label.style_label_left, size=size.small,
-                         tooltip=tradeInfo + "\n\n✓ BUY $" + str.tostring(orderAmount3, "#") + " @ " + str.tostring(nz(entryPrice3, order3Price), "#.####"))
+                         tooltip=tradeInfo + "\n\n✓ BUY $" + str.tostring(orderAmount3, "#") + " @ " + formatPrice(nz(entryPrice3, order3Price)))
                 // MIN (STOP-LOSS) - показываем если есть открытые позиции
                 if position1Open or position2Open or position3Open
                     label_fib_0_236 := label.new(endBar, fib_0_000, "0% STOP", 
                          color=color.new(color.red, 50), textcolor=color.red, style=label.style_label_left, size=size.small,
-                         tooltip="STOP-LOSS @ " + str.tostring(fib_0_000, "#.####"))
+                         tooltip="STOP-LOSS @ " + formatPrice(fib_0_000))
             
             // MIN и MAX метки - всегда показываем когда Фибо активен
-            label_min := label.new(confirmedMinBar, na, "MIN\n" + str.tostring(tooltipMin, "#.####") + (minUsesBody ? "\n(body)" : ""), 
+            label_min := label.new(confirmedMinBar, na, "MIN\n" + formatPrice(tooltipMin) + (minUsesBody ? "\n(body)" : ""), 
                  color=color.new(color.red, 0), textcolor=color.white, style=label.style_label_up, size=size.small,
                  yloc=yloc.belowbar,
-                 tooltip="STOP-LOSS: " + str.tostring(tooltipMin, "#.####") + "\nБар: " + str.tostring(tooltipMinBar))
+                 tooltip="STOP-LOSS: " + formatPrice(tooltipMin) + "\nБар: " + str.tostring(tooltipMinBar))
             // MAX label показываем только если:
             // 1. Была покупка (cycleHadBuy)
             // 2. Рост >= 100% (growthIsEnough)
             // 3. Нет pending MAX (MAX подтверждён) ИЛИ есть подтверждённый confirmedMax
             hasConfirmedMax = not na(confirmedMax) and confirmedMax > 0
             if cycleHadBuy and growthIsEnough and hasConfirmedMax
-                label_max := label.new(confirmedMaxBar, na, "MAX\n" + str.tostring(confirmedMax, "#.####") + (maxUsesBody ? "\n(body)" : ""), 
+                label_max := label.new(confirmedMaxBar, na, "MAX\n" + formatPrice(confirmedMax) + (maxUsesBody ? "\n(body)" : ""), 
                      color=color.new(color.blue, 0), textcolor=color.white, style=label.style_label_down, size=size.small,
                      yloc=yloc.abovebar,
-                     tooltip="MAX: " + str.tostring(confirmedMax, "#.####") + "\nСвязанный MIN: " + str.tostring(tooltipMin, "#.####") + " (бар " + str.tostring(tooltipMinBar) + ")\nРост: " + str.tostring(growthPct, "#.#") + "%")
+                     tooltip="MAX: " + formatPrice(confirmedMax) + "\nСвязанный MIN: " + formatPrice(tooltipMin) + " (бар " + str.tostring(tooltipMinBar) + ")\nРост: " + str.tostring(growthPct, "#.#") + "%")
             
             drawnCycleId := currentCycleId
             drawnMax := effectiveMax  // Сохраняем effectiveMax (включает pendingMaxPrice)
@@ -2691,9 +2786,9 @@ if hasPendingMax and showFibLines and showPendingMax
     pending_fib_0618_draw = getFibLevel(0.382, confirmedMin, pendingMaxPrice, useLogScale)
     line_pending_max := line.new(pendingMaxBar, pendingMaxPrice, bar_index, pendingMaxPrice, 
          color=color.new(color.purple, 30), width=2, style=line.style_dashed)
-    label_pending_max := label.new(bar_index, pendingMaxPrice, "⏳ PENDING MAX\n" + str.tostring(pendingMaxPrice, "#.####"), 
+    label_pending_max := label.new(bar_index, pendingMaxPrice, "⏳ PENDING MAX\n" + formatPrice(pendingMaxPrice), 
          color=color.new(color.purple, 50), textcolor=color.white, style=label.style_label_left, size=size.small,
-         tooltip="Ожидает подтверждения касанием 0.618 @ " + str.tostring(pending_fib_0618_draw, "#.####"))
+         tooltip="Ожидает подтверждения касанием 0.618 @ " + formatPrice(pending_fib_0618_draw))
     // Линия уровня 0.618 для подтверждения
     line_pending_fib618 := line.new(pendingMaxBar, pending_fib_0618_draw, bar_index, pending_fib_0618_draw, 
          color=color.new(color.orange, 50), width=1, style=line.style_dotted)
@@ -2744,9 +2839,9 @@ if showLocalMax and showFibLines and systemState == STATE_FIBO_ACTIVE and not na
             array.set(localMax618Lines, i, fib618Line)
             
             // Метка с ценой
-            localLabel = label.new(localBar, localPrice, "L" + str.tostring(i + 1) + "\n" + str.tostring(localPrice, "#.####"), 
+            localLabel = label.new(localBar, localPrice, "L" + str.tostring(i + 1) + "\\n" + formatPrice(localPrice), 
                  color=color.new(color.gray, 70), textcolor=color.white, style=label.style_label_down, size=size.tiny,
-                 tooltip="Локальный MAX #" + str.tostring(i + 1) + "\nЦена: " + str.tostring(localPrice, "#.####") + "\n0.618: " + str.tostring(local_fib_0618, "#.####"))
+                 tooltip="Локальный MAX #" + str.tostring(i + 1) + "\\nЦена: " + formatPrice(localPrice) + "\\n0.618: " + formatPrice(local_fib_0618))
             array.set(localMaxLabels, i, localLabel)
 
 // ============================================================================
@@ -2917,15 +3012,15 @@ if barstate.islast
         => "UNKNOWN"
     
     // Дополнительная отладка для WAITING_RESET
-    debugText = "DEBUG:\nState: " + stateNames + 
-         "\nsearchStartBar: " + (na(searchStartBar) ? "na" : str.tostring(searchStartBar)) +
-         "\nbar_index: " + str.tostring(bar_index) +
-         "\nlookback: " + str.tostring(waitingResetLookback) +
-         "\nlocalMin: " + str.tostring(waitingResetLocalMin, "#.####") +
-         "\nlocalMinBar: " + str.tostring(waitingResetLocalMinBar) +
-         "\ngrowth: " + str.tostring(waitingResetGrowth, "#.#") + "%" +
-         "\nconfirmedMin: " + (na(confirmedMin) ? "na" : str.tostring(confirmedMin, "#.####")) +
-         "\nconfirmedMax: " + (na(confirmedMax) ? "na" : str.tostring(confirmedMax, "#.####"))
+    debugText = "DEBUG:\\nState: " + stateNames + 
+         "\\nsearchStartBar: " + (na(searchStartBar) ? "na" : str.tostring(searchStartBar)) +
+         "\\nbar_index: " + str.tostring(bar_index) +
+         "\\nlookback: " + str.tostring(waitingResetLookback) +
+         "\\nlocalMin: " + formatPrice(waitingResetLocalMin) +
+         "\\nlocalMinBar: " + str.tostring(waitingResetLocalMinBar) +
+         "\\ngrowth: " + str.tostring(waitingResetGrowth, "#.#") + "%" +
+         "\\nconfirmedMin: " + (na(confirmedMin) ? "na" : formatPrice(confirmedMin)) +
+         "\\nconfirmedMax: " + (na(confirmedMax) ? "na" : formatPrice(confirmedMax))
     
     if systemState == STATE_WAITING_RESET
         cond1 = low < confirmedMin * 0.98
@@ -2940,7 +3035,7 @@ if barstate.islast
              "\nCheck3 growth>=100: " + (cond3_growth ? "YES" : "no") +
              "\nCheck3 notNa: " + (cond3_notna ? "YES" : "no") +
              "\nCheck3 above*0.98: " + (cond3_above ? "YES" : "no") +
-             "\nmin*0.98=" + (na(confirmedMin) ? "na" : str.tostring(confirmedMin * 0.98, "#.####"))
+             "\\nmin*0.98=" + (na(confirmedMin) ? "na" : formatPrice(confirmedMin * 0.98))
     
     debugLabel := label.new(bar_index + 5, high, debugText, 
          color=color.new(color.black, 20), textcolor=color.white, 

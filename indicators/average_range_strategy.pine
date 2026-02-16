@@ -1,0 +1,114 @@
+//@version=5
+strategy("Average Range Strategy Test", overlay=true, pyramiding=10, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
+
+// ==================== НАСТРОЙКИ ====================
+lookbackPeriod = input.int(5, "Количество баров для расчёта", minval=1, maxval=50)
+takeProfitPercent = input.float(2.0, "Take Profit %", minval=0.1, maxval=100, step=0.1)
+maxOpenTrades = input.int(5, "Макс. открытых сделок", minval=1, maxval=20)
+
+// ==================== РАСЧЁТ ТОЧКИ ВХОДА ====================
+sumRange = 0.0
+for i = 0 to lookbackPeriod - 1
+    sumRange := sumRange + (high[i] - low[i])
+
+averageRange = sumRange / lookbackPeriod
+buyPoint = close - averageRange
+
+// ==================== ЛОГИКА ПОКУПКИ ====================
+// Покупаем когда цена касается или пробивает вниз точку входа
+touchedBuyPoint = low <= buyPoint[1]  // Цена дошла до точки входа предыдущего бара
+
+// Проверяем количество открытых позиций
+openTrades = strategy.opentrades
+
+// Условие для входа
+canBuy = touchedBuyPoint and openTrades < maxOpenTrades
+
+if canBuy
+    strategy.entry("Buy_" + str.tostring(bar_index), strategy.long)
+
+// ==================== ЛОГИКА ПРОДАЖИ ====================
+// Проверяем каждую открытую позицию на достижение Take Profit
+for i = 0 to strategy.opentrades - 1
+    entryPrice = strategy.opentrades.entry_price(i)
+    targetPrice = entryPrice * (1 + takeProfitPercent / 100)
+    tradeId = strategy.opentrades.entry_id(i)
+    
+    if high >= targetPrice
+        strategy.close(tradeId, comment="TP " + str.tostring(takeProfitPercent) + "%")
+
+// ==================== ВИЗУАЛИЗАЦИЯ ====================
+// Точка входа на следующем баре (сдвинута на 1 бар вправо)
+plot(buyPoint, "Buy Point Level", color=color.new(color.green, 50), linewidth=1, style=plot.style_stepline, offset=1)
+
+// Линия от первого бара периода до точки покупки
+startPrice = low[lookbackPeriod - 1]
+startBar = bar_index - (lookbackPeriod - 1)
+
+var line buyLine = na
+if barstate.islast
+    if not na(buyLine)
+        line.delete(buyLine)
+    buyLine := line.new(
+         x1=startBar, 
+         y1=startPrice, 
+         x2=bar_index + 1, 
+         y2=buyPoint, 
+         color=color.green, 
+         width=2,
+         style=line.style_solid
+         )
+
+// Метка с точкой покупки
+var label buyLabel = na
+if barstate.islast
+    if not na(buyLabel)
+        label.delete(buyLabel)
+    buyLabel := label.new(
+         x=bar_index + 1, 
+         y=buyPoint, 
+         text="Buy: " + str.tostring(buyPoint, "#.#####"), 
+         color=color.green, 
+         textcolor=color.white,
+         style=label.style_label_up,
+         tooltip="Точка покупки: " + str.tostring(buyPoint, "#.#####") + 
+                 "\nСредний диапазон: " + str.tostring(averageRange, "#.#####") + 
+                 "\nЗакрытие: " + str.tostring(close, "#.#####")
+         )
+
+// Точка на уровне покупки
+var label buyDot = na
+if barstate.islast
+    if not na(buyDot)
+        label.delete(buyDot)
+    buyDot := label.new(
+         x=bar_index + 1, 
+         y=buyPoint, 
+         text="●", 
+         color=color.new(color.green, 100),
+         textcolor=color.lime,
+         size=size.large,
+         style=label.style_none,
+         tooltip="🎯 ТОЧКА ПОКУПКИ\n" +
+                 "━━━━━━━━━━━━━━\n" +
+                 "Цена входа: " + str.tostring(buyPoint, "#.#####") + 
+                 "\nTake Profit: " + str.tostring(takeProfitPercent) + "%"
+         )
+
+// ==================== СТАТИСТИКА ====================
+var table statsTable = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 80))
+if barstate.islast
+    table.cell(statsTable, 0, 0, "Средний диапазон:", text_color=color.white)
+    table.cell(statsTable, 1, 0, str.tostring(averageRange, "#.#####"), text_color=color.yellow)
+    table.cell(statsTable, 0, 1, "Точка покупки:", text_color=color.white)
+    table.cell(statsTable, 1, 1, str.tostring(buyPoint, "#.#####"), text_color=color.green)
+    table.cell(statsTable, 0, 2, "Take Profit %:", text_color=color.white)
+    table.cell(statsTable, 1, 2, str.tostring(takeProfitPercent) + "%", text_color=color.orange)
+    table.cell(statsTable, 0, 3, "Открытых сделок:", text_color=color.white)
+    table.cell(statsTable, 1, 3, str.tostring(openTrades), text_color=color.aqua)
+    table.cell(statsTable, 0, 4, "Всего сделок:", text_color=color.white)
+    table.cell(statsTable, 1, 4, str.tostring(strategy.closedtrades), text_color=color.white)
+    table.cell(statsTable, 0, 5, "Прибыль:", text_color=color.white)
+    netProfit = strategy.netprofit
+    profitColor = netProfit >= 0 ? color.green : color.red
+    table.cell(statsTable, 1, 5, str.tostring(netProfit, "#.##"), text_color=profitColor)
