@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bybit DCA Bot — Dashboard</title>
-    <meta name="description" content="Web dashboard for Bybit DCA Trading Bot with Average Range Strategy">
+    <title>DCA Trading Bot</title>
+    <meta name="description" content="DCA Trading Bot — Average Range Strategy">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,41 +21,41 @@
            DESIGN TOKENS
            ══════════════════════════════════════════ */
         :root {
-            --bg-primary: #0a0e17;
-            --bg-secondary: #111827;
-            --bg-card: #1a1f2e;
-            --bg-card-hover: #222839;
-            --bg-input: #0d1117;
-            --border-color: #2d3548;
-            --border-accent: #3b82f6;
+            --bg-primary: #121214;
+            --bg-secondary: #1a1a1e;
+            --bg-card: #1e1e22;
+            --bg-card-hover: #2a2a2e;
+            --bg-input: #16161a;
+            --border-color: #2e2e33;
+            --border-accent: #f7a600;
 
-            --text-primary: #e2e8f0;
-            --text-secondary: #94a3b8;
-            --text-muted: #64748b;
+            --text-primary: #eaecef;
+            --text-secondary: #a1a7bb;
+            --text-muted: #6c7284;
 
-            --accent-blue: #3b82f6;
-            --accent-green: #10b981;
-            --accent-red: #ef4444;
-            --accent-orange: #f59e0b;
-            --accent-purple: #8b5cf6;
-            --accent-cyan: #06b6d4;
+            --accent-blue: #f7a600;
+            --accent-green: #20b26c;
+            --accent-red: #ef454a;
+            --accent-orange: #f7a600;
+            --accent-purple: #9963d8;
+            --accent-cyan: #3bc3e8;
 
-            --gradient-blue: linear-gradient(135deg, #3b82f6, #2563eb);
-            --gradient-green: linear-gradient(135deg, #10b981, #059669);
-            --gradient-red: linear-gradient(135deg, #ef4444, #dc2626);
-            --gradient-purple: linear-gradient(135deg, #8b5cf6, #7c3aed);
+            --gradient-blue: linear-gradient(135deg, #f7a600, #e09200);
+            --gradient-green: linear-gradient(135deg, #20b26c, #18905a);
+            --gradient-red: linear-gradient(135deg, #ef454a, #d63840);
+            --gradient-purple: linear-gradient(135deg, #9963d8, #7c49c0);
 
-            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-            --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
-            --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
-            --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.3);
-            --shadow-glow-green: 0 0 20px rgba(16, 185, 129, 0.3);
-            --shadow-glow-red: 0 0 20px rgba(239, 68, 68, 0.3);
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+            --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
+            --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.6);
+            --shadow-glow-blue: 0 0 20px rgba(247, 166, 0, 0.2);
+            --shadow-glow-green: 0 0 20px rgba(32, 178, 108, 0.2);
+            --shadow-glow-red: 0 0 20px rgba(239, 69, 74, 0.2);
 
-            --radius-sm: 8px;
-            --radius-md: 12px;
-            --radius-lg: 16px;
-            --radius-xl: 20px;
+            --radius-sm: 6px;
+            --radius-md: 8px;
+            --radius-lg: 10px;
+            --radius-xl: 12px;
         }
 
         /* ══════════════════════════════════════════
@@ -77,7 +77,7 @@
             overflow-x: hidden;
         }
 
-        /* Subtle animated background */
+        /* Clean Bybit background */
         body::before {
             content: '';
             position: fixed;
@@ -85,10 +85,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background:
-                radial-gradient(ellipse at 20% 20%, rgba(59, 130, 246, 0.06) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
-                radial-gradient(ellipse at 50% 50%, rgba(16, 185, 129, 0.03) 0%, transparent 50%);
+            background: transparent;
             pointer-events: none;
             z-index: 0;
         }
@@ -100,8 +97,7 @@
             position: sticky;
             top: 0;
             z-index: 100;
-            background: rgba(10, 14, 23, 0.85);
-            backdrop-filter: blur(20px);
+            background: #121214;
             border-bottom: 1px solid var(--border-color);
             padding: 0 24px;
         }
@@ -124,15 +120,14 @@
         }
 
         .logo-icon {
-            width: 36px;
-            height: 36px;
+            width: 32px;
+            height: 32px;
             background: var(--gradient-blue);
-            border-radius: 10px;
+            border-radius: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
-            box-shadow: var(--shadow-glow-blue);
+            font-size: 16px;
         }
 
         .logo span {
@@ -144,10 +139,7 @@
         .header-status {
             display: flex;
             align-items: center;
-            gap: 20px;
-        }
-
-        .status-badge {
+            gap: 12px;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -158,15 +150,15 @@
         }
 
         .status-badge.offline {
-            background: rgba(239, 68, 68, 0.15);
+            background: rgba(239, 69, 74, 0.12);
             color: var(--accent-red);
-            border: 1px solid rgba(239, 68, 68, 0.3);
+            border: 1px solid rgba(239, 69, 74, 0.25);
         }
 
         .status-badge.online {
-            background: rgba(16, 185, 129, 0.15);
+            background: rgba(32, 178, 108, 0.12);
             color: var(--accent-green);
-            border: 1px solid rgba(16, 185, 129, 0.3);
+            border: 1px solid rgba(32, 178, 108, 0.25);
         }
 
         .status-dot {
@@ -185,12 +177,12 @@
             0%,
             100% {
                 opacity: 1;
-                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+                box-shadow: 0 0 0 0 rgba(32, 178, 108, 0.4);
             }
 
             50% {
                 opacity: 0.6;
-                box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+                box-shadow: 0 0 0 6px rgba(32, 178, 108, 0);
             }
         }
 
@@ -221,8 +213,7 @@
         }
 
         .card:hover {
-            border-color: rgba(59, 130, 246, 0.3);
-            box-shadow: var(--shadow-md);
+            border-color: rgba(247, 166, 0, 0.2);
         }
 
         .card-header {
@@ -254,7 +245,7 @@
         .metrics-row {
             grid-column: 1 / -1;
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            grid-template-columns: repeat(7, 1fr);
             gap: 16px;
         }
 
@@ -267,8 +258,7 @@
         }
 
         .metric-card:hover {
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-md);
+            border-color: rgba(247, 166, 0, 0.3);
         }
 
         .metric-label {
@@ -301,7 +291,7 @@
         }
 
         .metric-value.neutral {
-            color: var(--accent-blue);
+            color: var(--accent-cyan);
         }
 
         .metric-value.warn {
@@ -357,9 +347,10 @@
 
         .chart-btn:hover,
         .chart-btn.active {
-            background: var(--accent-blue);
-            color: white;
-            border-color: var(--accent-blue);
+            background: var(--accent-orange);
+            color: #121214;
+            border-color: var(--accent-orange);
+            font-weight: 600;
         }
 
         /* ══════════════════════════════════════════
@@ -399,23 +390,19 @@
         .btn-start {
             background: var(--gradient-green);
             color: white;
-            box-shadow: var(--shadow-glow-green);
         }
 
         .btn-start:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
+            opacity: 0.9;
         }
 
         .btn-stop {
             background: var(--gradient-red);
             color: white;
-            box-shadow: var(--shadow-glow-red);
         }
 
         .btn-stop:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 0 30px rgba(239, 68, 68, 0.4);
+            opacity: 0.9;
         }
 
         .btn:disabled {
@@ -568,13 +555,296 @@
 
         .form-group input:focus,
         .form-group select:focus {
-            border-color: var(--accent-blue);
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+            border-color: var(--accent-orange);
+            box-shadow: 0 0 0 2px rgba(247, 166, 0, 0.1);
         }
 
         .form-group input::placeholder {
             color: var(--text-muted);
         }
+
+        /* Info Tooltip Icon */
+        .label-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .info-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            border: 1px solid var(--text-muted);
+            font-size: 10px;
+            font-weight: 700;
+            font-style: normal;
+            color: var(--text-muted);
+            cursor: help;
+            position: relative;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+
+        .info-icon:hover {
+            border-color: var(--accent-orange);
+            color: var(--accent-orange);
+        }
+
+        .info-icon .info-tooltip {
+            display: none;
+            position: fixed;
+            background: #2a2a2e;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 400;
+            font-family: 'Inter', sans-serif;
+            color: var(--text-secondary);
+            white-space: normal;
+            max-width: 280px;
+            line-height: 1.4;
+            z-index: 99999;
+            box-shadow: var(--shadow-lg);
+            pointer-events: none;
+        }
+
+        .info-icon .info-tooltip::after {
+            display: none;
+        }
+
+        .info-icon:hover .info-tooltip {
+            display: block;
+        }
+
+        /* Symbol Selector */
+        .symbol-selector {
+            position: relative;
+        }
+
+        .symbol-selector input {
+            width: 100%;
+            cursor: text;
+        }
+
+        .symbol-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 320px;
+            overflow-y: auto;
+            background: var(--bg-card);
+            border: 1px solid var(--border-accent);
+            border-top: none;
+            border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+            z-index: 1000;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .symbol-dropdown.open {
+            display: block;
+        }
+
+        .symbol-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            cursor: pointer;
+            transition: background 0.15s;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .symbol-item:last-child {
+            border-bottom: none;
+        }
+
+        .symbol-item:hover {
+            background: var(--bg-card-hover);
+        }
+
+        .symbol-item .sym-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .symbol-item .sym-info {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .symbol-item .sym-price {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .symbol-item .sym-change {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .symbol-item .sym-change.positive {
+            color: var(--accent-green);
+            background: rgba(32, 178, 108, 0.12);
+        }
+
+        .symbol-item .sym-change.negative {
+            color: var(--accent-red);
+            background: rgba(239, 69, 74, 0.12);
+        }
+
+        .symbol-loading {
+            text-align: center;
+            padding: 16px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        /* Backtest Stats */
+        .backtest-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .bt-stat {
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            text-align: center;
+        }
+
+        .bt-stat .bt-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 4px;
+        }
+
+        .bt-stat .bt-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .bt-stat .bt-value.positive { color: var(--accent-green); }
+        .bt-stat .bt-value.negative { color: var(--accent-red); }
+        .bt-stat .bt-value.neutral { color: var(--accent-cyan); }
+
+        /* Trades Table */
+        .trades-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .trades-table th {
+            background: var(--bg-input);
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+            padding: 8px 10px;
+            text-align: left;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .trades-table td {
+            padding: 7px 10px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .trades-table tr:hover td {
+            background: var(--bg-card-hover);
+            cursor: pointer;
+        }
+
+        .trades-table tr.selected td {
+            background: rgba(32, 178, 108, 0.15);
+        }
+
+        .trades-table .pnl-positive { color: var(--accent-green); font-weight: 600; }
+        .trades-table .pnl-negative { color: var(--accent-red); font-weight: 600; }
+        .trades-table .status-open {
+            color: var(--accent-orange);
+            font-weight: 500;
+        }
+        .trades-table .status-win {
+            color: var(--accent-green);
+            font-weight: 500;
+        }
+
+        /* Calc Explanation Panel */
+        .calc-panel {
+            margin-top: 16px;
+            padding: 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            display: none;
+        }
+        .calc-panel.visible { display: block; }
+        .calc-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+        }
+        .calc-step {
+            margin-bottom: 10px;
+            padding: 10px;
+            background: var(--bg-main);
+            border-radius: 6px;
+            border-left: 3px solid var(--accent-orange);
+        }
+        .calc-step-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent-orange);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        .calc-step-content {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: 'Courier New', monospace;
+            line-height: 1.6;
+        }
+        .calc-step.buy-step { border-left-color: var(--accent-green); }
+        .calc-step.buy-step .calc-step-title { color: var(--accent-green); }
+        .calc-bars-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 6px;
+        }
+        .calc-bars-table th, .calc-bars-table td {
+            padding: 4px 8px;
+            font-size: 11px;
+            text-align: right;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .calc-bars-table th {
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+        .calc-bars-table td { color: var(--text-secondary); }
 
         /* DCA Config Table */
         .dca-config-table {
@@ -611,7 +881,7 @@
         }
 
         .dca-config-table input:focus {
-            border-color: var(--accent-blue);
+            border-color: var(--accent-orange);
         }
 
         .dca-config-actions {
@@ -640,17 +910,18 @@
 
         .btn-sm.primary {
             background: var(--gradient-blue);
-            color: white;
+            color: #121214;
             border: none;
+            font-weight: 600;
         }
 
         .btn-sm.primary:hover {
-            box-shadow: var(--shadow-glow-blue);
+            opacity: 0.9;
         }
 
         .btn-sm.danger {
             color: var(--accent-red);
-            border-color: rgba(239, 68, 68, 0.3);
+            border-color: rgba(239, 69, 74, 0.3);
         }
 
         .btn-sm.danger:hover {
@@ -694,7 +965,7 @@
         }
 
         .log-entry:hover {
-            background: rgba(59, 130, 246, 0.05);
+            background: rgba(247, 166, 0, 0.04);
         }
 
         .log-time {
@@ -707,7 +978,7 @@
         }
 
         .log-level.INFO {
-            color: var(--accent-blue);
+            color: var(--accent-cyan);
         }
 
         .log-level.WARNING {
@@ -782,7 +1053,7 @@
             }
 
             .metrics-row {
-                grid-template-columns: repeat(3, 1fr);
+                grid-template-columns: repeat(4, 1fr);
             }
 
             .config-grid {
@@ -818,28 +1089,391 @@
         }
 
         .card {
-            animation: fade-in 0.5s ease-out;
+            animation: fade-in 0.3s ease-out;
         }
 
         .metric-card {
-            animation: fade-in 0.5s ease-out;
+            animation: fade-in 0.3s ease-out;
         }
 
         .metric-card:nth-child(2) {
-            animation-delay: 0.05s;
+            animation-delay: 0.03s;
         }
 
         .metric-card:nth-child(3) {
-            animation-delay: 0.1s;
+            animation-delay: 0.06s;
         }
 
         .metric-card:nth-child(4) {
-            animation-delay: 0.15s;
+            animation-delay: 0.09s;
         }
 
-        .metric-card:nth-child(5) {
-            animation-delay: 0.2s;
+        /* ══════════════════════════════════════════
+           COUNTDOWN TIMER RING
+           ══════════════════════════════════════════ */
+        .countdown-ring {
+            width: 48px;
+            height: 48px;
+            position: relative;
+            margin: 4px 0 0;
         }
+
+        .countdown-ring svg {
+            width: 48px;
+            height: 48px;
+            transform: rotate(-90deg);
+        }
+
+        .ring-bg {
+            fill: none;
+            stroke: var(--border-color);
+            stroke-width: 3;
+        }
+
+        .ring-fg {
+            fill: none;
+            stroke: var(--accent-orange);
+            stroke-width: 3;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 1s linear;
+        }
+
+        .countdown-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        /* ══════════════════════════════════════════
+           PROGRESS BAR (Price to TP)
+           ══════════════════════════════════════════ */
+        .progress-section {
+            grid-column: 1 / -1;
+        }
+
+        .progress-info-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .progress-pct-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 20px;
+            background: rgba(239, 69, 74, 0.15);
+            color: var(--accent-red);
+        }
+
+        .progress-pct-badge.positive {
+            background: rgba(32, 178, 108, 0.15);
+            color: var(--accent-green);
+        }
+
+        .progress-bar-wrapper {
+            position: relative;
+            height: 10px;
+            background: var(--bg-input);
+            border-radius: 5px;
+            overflow: visible;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width 0.6s ease, background 0.3s;
+            position: relative;
+        }
+
+        .progress-bar-fill.positive {
+            background: linear-gradient(90deg, var(--accent-orange), var(--accent-green));
+        }
+
+        .progress-bar-fill.negative {
+            background: linear-gradient(90deg, var(--accent-red), var(--accent-orange));
+        }
+
+        .progress-marker {
+            position: absolute;
+            top: -5px;
+            width: 12px;
+            height: 20px;
+            border-radius: 2px;
+            z-index: 2;
+            transform: translateX(-50%);
+        }
+
+        .progress-marker.price-marker {
+            width: 3px;
+            background: var(--text-primary);
+            top: -4px;
+            height: 18px;
+            box-shadow: 0 0 6px rgba(255,255,255,0.4);
+        }
+
+        .progress-marker.be-marker {
+            width: 2px;
+            background: var(--accent-orange);
+            top: -3px;
+            height: 16px;
+            opacity: 0.8;
+        }
+
+        .progress-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
+        }
+
+        .label-red { color: var(--accent-red); }
+        .label-orange { color: var(--accent-orange); }
+        .label-green { color: var(--accent-green); }
+
+        /* ══════════════════════════════════════════
+           EVENT LOG
+           ══════════════════════════════════════════ */
+        .event-log-section {
+            grid-column: 1 / -1;
+        }
+
+        .event-container {
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 4px 0;
+        }
+
+        .event-container::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .event-container::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+
+        .event-empty {
+            text-align: center;
+            padding: 24px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .event-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 16px;
+            border-bottom: 1px solid rgba(46, 46, 51, 0.5);
+            animation: slide-in 0.3s ease-out;
+        }
+
+        .event-item:last-child {
+            border-bottom: none;
+        }
+
+        @keyframes slide-in {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .event-icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .event-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .event-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .event-detail {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 1px;
+        }
+
+        .event-time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        /* ══════════════════════════════════════════
+           NOTIFICATION TOGGLE
+           ══════════════════════════════════════════ */
+        .notif-toggle {
+            position: relative;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: all 0.2s;
+        }
+
+        .notif-toggle:hover {
+            border-color: var(--accent-orange);
+            color: var(--accent-orange);
+        }
+
+        .notif-toggle.active {
+            border-color: var(--accent-green);
+            color: var(--accent-green);
+            background: rgba(32, 178, 108, 0.1);
+        }
+
+        .notif-dot {
+            display: none;
+        }
+
+        .notif-toggle.active .notif-dot {
+            display: block;
+            position: absolute;
+            top: 3px;
+            right: 3px;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        /* ════════════════════════════════════════════
+           STRATEGY INFO PANEL
+           ════════════════════════════════════════════ */
+        .strategy-panel {
+            background: rgba(18, 18, 20, 0.92);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 14px 18px;
+            margin: 12px 16px 0;
+            backdrop-filter: blur(4px);
+        }
+
+        .strategy-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .strategy-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--accent-orange);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .strategy-signal {
+            font-size: 12px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 12px;
+        }
+
+        .strategy-signal.yes {
+            background: rgba(32, 178, 108, 0.15);
+            color: var(--accent-green);
+        }
+
+        .strategy-signal.no {
+            background: rgba(108, 114, 132, 0.15);
+            color: var(--text-muted);
+        }
+
+        .strategy-bars {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+
+        .strategy-bar {
+            flex: 1;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 6px;
+            text-align: center;
+            position: relative;
+        }
+
+        .strategy-bar.current {
+            border-color: var(--accent-orange);
+            background: rgba(247, 166, 0, 0.08);
+        }
+
+        .strategy-bar .sb-label {
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 4px;
+        }
+
+        .strategy-bar .sb-range {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .strategy-bar .sb-hl {
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .strategy-calc {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .strategy-calc-item {
+            text-align: center;
+        }
+
+        .strategy-calc-item .sc-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 2px;
+        }
+
+        .strategy-calc-item .sc-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .strategy-calc-item .sc-value.orange { color: var(--accent-orange); }
+        .strategy-calc-item .sc-value.green { color: var(--accent-green); }
+        .strategy-calc-item .sc-value.cyan { color: var(--accent-cyan); }
+
     </style>
 </head>
 
@@ -849,14 +1483,17 @@
     <header class="header">
         <div class="header-inner">
             <div class="logo">
-                <div class="logo-icon">📈</div>
-                DCA Bot <span>Average Range Strategy</span>
+                <div class="logo-icon">⚡</div>
+                DCA Bot <span>Average Range</span>
             </div>
             <div class="header-status">
                 <div id="status-badge" class="status-badge offline">
                     <div class="status-dot"></div>
                     <span id="status-text">Offline</span>
                 </div>
+                <button class="notif-toggle" id="notif-toggle-header" onclick="toggleNotifications()" title="Включить звуковые уведомления">
+                    🔔<span class="notif-dot"></span>
+                </button>
             </div>
         </div>
     </header>
@@ -891,6 +1528,42 @@
                 <div id="m-signal" class="metric-value">—</div>
                 <div id="m-ticks" class="metric-sub"></div>
             </div>
+            <div class="metric-card">
+                <div class="metric-label">Текущий P&L</div>
+                <div id="m-pnl" class="metric-value">—</div>
+                <div id="m-pnl-pct" class="metric-sub"></div>
+            </div>
+            <div class="metric-card" style="display:flex;flex-direction:column;align-items:center;justify-content:center">
+                <div class="metric-label" style="text-align:center">Сл. проверка</div>
+                <div class="countdown-ring" id="countdown-ring">
+                    <svg viewBox="0 0 40 40">
+                        <circle class="ring-bg" cx="20" cy="20" r="17" />
+                        <circle class="ring-fg" id="countdown-circle" cx="20" cy="20" r="17"
+                            stroke-dasharray="106.8" stroke-dashoffset="0" />
+                    </svg>
+                    <span class="countdown-text" id="countdown-text">—</span>
+                </div>
+                <div class="metric-sub" style="margin-top:4px;text-align:center" id="countdown-sub"></div>
+            </div>
+        </div>
+
+        <!-- ────── Progress Bar ────── -->
+        <div class="progress-section card" id="progress-section" style="display:none">
+            <div class="card-body" style="padding:16px 20px">
+                <div class="progress-info-row">
+                    <span style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:500">📊 Прогресс до продажи</span>
+                    <span class="progress-pct-badge" id="progress-pct-badge">0%</span>
+                </div>
+                <div class="progress-bar-wrapper">
+                    <div class="progress-bar-fill negative" id="progress-fill" style="width:0%"></div>
+                    <!-- markers injected by JS -->
+                </div>
+                <div class="progress-labels">
+                    <span class="label-red" id="prog-low">—</span>
+                    <span class="label-orange" id="prog-be">BE: —</span>
+                    <span class="label-green" id="prog-sell">TP: —</span>
+                </div>
+            </div>
         </div>
 
         <!-- ────── Chart ────── -->
@@ -906,12 +1579,59 @@
                     <div class="chart-toolbar-divider"></div>
                     <span class="chart-toolbar-label">Свечей:</span>
                     <button class="chart-btn candle-btn" onclick="loadChart(30)">30</button>
-                    <button class="chart-btn candle-btn active" onclick="loadChart(60)">60</button>
+                    <button class="chart-btn candle-btn" onclick="loadChart(60)">60</button>
                     <button class="chart-btn candle-btn" onclick="loadChart(120)">120</button>
                     <button class="chart-btn candle-btn" onclick="loadChart(200)">200</button>
+                    <button class="chart-btn candle-btn" onclick="loadChart(500)">500</button>
+                    <button class="chart-btn candle-btn active" onclick="loadChart(1000)">All</button>
+                    <div class="chart-toolbar-divider"></div>
+                    <button class="btn-sm primary" onclick="runBacktest()" id="btn-backtest">🧪 Бэктест</button>
                 </div>
             </div>
             <div id="chart-container"></div>
+            <!-- Strategy Info Panel -->
+            <div class="strategy-panel" id="strategy-panel" style="display:none">
+                <div class="strategy-header">
+                    <span class="strategy-title">📊 Стратегия Average Range (дневной ТФ)</span>
+                    <span class="strategy-signal no" id="strat-signal">Нет сигнала</span>
+                </div>
+                <div class="strategy-bars" id="strat-bars"></div>
+                <div class="strategy-calc" id="strat-calc"></div>
+            </div>
+        </div>
+
+        <!-- ────── Backtest Results ────── -->
+        <div class="card" id="backtest-panel" style="display:none">
+            <div class="card-header">
+                <div class="card-title">📈 Результаты бэктеста</div>
+                <button class="btn-sm" onclick="hideBacktest()">✕ Скрыть</button>
+            </div>
+            <div class="card-body">
+                <!-- Stats Grid -->
+                <div class="backtest-stats" id="backtest-stats"></div>
+                <!-- Trades Table -->
+                <div style="margin-top:16px; max-height:400px; overflow-y:auto;">
+                    <table class="trades-table" id="trades-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Уровень</th>
+                                <th>Вход</th>
+                                <th>Выход</th>
+                                <th>Цена входа</th>
+                                <th>Цена выхода</th>
+                                <th>Сумма</th>
+                                <th>P&L</th>
+                                <th>P&L %</th>
+                                <th>Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trades-tbody"></tbody>
+                    </table>
+                </div>
+                <!-- Calc Detail Panel -->
+                <div class="calc-panel" id="calc-panel"></div>
+            </div>
         </div>
 
         <!-- ────── Sidebar ────── -->
@@ -958,11 +1678,16 @@
             <div class="card-body">
                 <div class="config-grid">
                     <div class="form-group">
-                        <label>Торговая пара</label>
-                        <input id="cfg-symbol" type="text" value="BTCUSDT" placeholder="BTCUSDT">
+                        <label class="label-row">Торговая пара <span class="info-icon">i<span class="info-tooltip">Криптовалютная пара для торговли на Bybit (спот). Нажмите на поле для поиска.</span></span></label>
+                        <div class="symbol-selector" id="symbol-selector">
+                            <input id="cfg-symbol" type="text" value="BTCUSDT" placeholder="Поиск пары..." autocomplete="off">
+                            <div class="symbol-dropdown" id="symbol-dropdown">
+                                <div class="symbol-loading">Загрузка...</div>
+                            </div>
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label>Таймфрейм</label>
+                        <label class="label-row">Таймфрейм <span class="info-icon">i<span class="info-tooltip">Временной интервал свечей. На каждом интервале бот проверяет сигналы. Например, D — один бар = один день.</span></span></label>
                         <select id="cfg-timeframe">
                             <option value="60">1 час (1H)</option>
                             <option value="240">4 часа (4H)</option>
@@ -971,31 +1696,31 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Общий баланс ($)</label>
+                        <label class="label-row">Общий баланс ($) <span class="info-icon">i<span class="info-tooltip">Сумма капитала, выделенного на стратегию. DCA-уровни рассчитываются как % от этой суммы.</span></span></label>
                         <input id="cfg-balance" type="number" value="1000" step="100">
                     </div>
                     <div class="form-group">
-                        <label>% продажи от безубытка</label>
+                        <label class="label-row">% продажи от безубытка <span class="info-icon">i<span class="info-tooltip">Когда цена поднимется выше безубыточности на этот %, все позиции будут проданы. Например, 1% — продажа при +1% от средневзвешенной цены входа.</span></span></label>
                         <input id="cfg-sellpct" type="number" value="1.0" step="0.1">
                     </div>
                     <div class="form-group">
-                        <label>Lookback (баров)</label>
+                        <label class="label-row">Lookback (баров) <span class="info-icon">i<span class="info-tooltip">Количество последних баров для расчёта среднего диапазона (High-Low). Точка покупки = Close − средний диапазон.</span></span></label>
                         <input id="cfg-lookback" type="number" value="5" min="1" max="50">
                     </div>
                     <div class="form-group">
-                        <label>Интервал проверки (сек)</label>
+                        <label class="label-row">Интервал проверки (сек) <span class="info-icon">i<span class="info-tooltip">Как часто бот проверяет рынок и пересчитывает сигналы. Рекомендуется 60 сек для дневного ТФ.</span></span></label>
                         <input id="cfg-interval" type="number" value="60" min="10">
                     </div>
                     <div class="form-group">
-                        <label>API Key</label>
+                        <label class="label-row">API Key <span class="info-icon">i<span class="info-tooltip">API-ключ от Bybit. Создайте в личном кабинете Bybit → API Management. Нужны права на спот-торговлю.</span></span></label>
                         <input id="cfg-apikey" type="password" placeholder="••••••••">
                     </div>
                     <div class="form-group">
-                        <label>API Secret</label>
+                        <label class="label-row">API Secret <span class="info-icon">i<span class="info-tooltip">Секретный ключ от Bybit API. Хранится только локально, не передаётся третьим лицам.</span></span></label>
                         <input id="cfg-apisecret" type="password" placeholder="••••••••">
                     </div>
                     <div class="form-group">
-                        <label>Режим</label>
+                        <label class="label-row">Режим <span class="info-icon">i<span class="info-tooltip">Testnet — торговля на тестовом аккаунте (без реальных денег). Production — реальная торговля. ⚠️ Используйте Production только если уверены.</span></span></label>
                         <select id="cfg-testnet">
                             <option value="true">Testnet</option>
                             <option value="false">Production ⚠️</option>
@@ -1021,6 +1746,22 @@
                     <span id="dca-total-pct"
                         style="font-size:12px;color:var(--text-muted);line-height:32px;margin-left:auto"></span>
                 </div>
+            </div>
+        </div>
+
+        <!-- ────── Event Log ────── -->
+        <div class="event-log-section card" id="event-log-section">
+            <div class="card-header">
+                <div class="card-title">🔔 События</div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <button class="notif-toggle" id="notif-toggle" onclick="toggleNotifications()" title="Включить уведомления">
+                        🔔<span class="notif-dot"></span>
+                    </button>
+                    <button class="btn-sm" onclick="clearEvents()">Очистить</button>
+                </div>
+            </div>
+            <div class="event-container" id="event-container">
+                <div class="event-empty">Нет событий. Запустите бота.</div>
             </div>
         </div>
 
@@ -1053,8 +1794,18 @@
         let priceLines = [];
         let pollInterval = null;
         let currentTimeframe = 'D';
-        let currentCandleCount = 60;
+        let currentCandleCount = 1000;
         let logPollInterval = null;
+
+        // New state for improvements
+        let countdownTimer = null;
+        let countdownSeconds = 0;
+        let checkIntervalSec = 60;
+        let notificationsEnabled = false;
+        let prevSignalState = null;
+        let prevPositionLevel = 0;
+        let prevSellState = false;
+        let eventsList = [];
 
         // ─── Chart ───
         function initChart() {
@@ -1062,39 +1813,39 @@
 
             chart = LightweightCharts.createChart(container, {
                 layout: {
-                    background: { type: 'solid', color: '#1a1f2e' },
-                    textColor: '#94a3b8',
+                    background: { type: 'solid', color: '#1e1e22' },
+                    textColor: '#a1a7bb',
                     fontFamily: "'Inter', sans-serif",
                 },
                 grid: {
-                    vertLines: { color: 'rgba(45,53,72,0.5)' },
-                    horzLines: { color: 'rgba(45,53,72,0.5)' },
+                    vertLines: { color: 'rgba(46,46,51,0.6)' },
+                    horzLines: { color: 'rgba(46,46,51,0.6)' },
                 },
                 crosshair: {
                     mode: LightweightCharts.CrosshairMode.Normal,
-                    vertLine: { color: 'rgba(59,130,246,0.4)', labelBackgroundColor: '#3b82f6' },
-                    horzLine: { color: 'rgba(59,130,246,0.4)', labelBackgroundColor: '#3b82f6' },
+                    vertLine: { color: 'rgba(247,166,0,0.3)', labelBackgroundColor: '#f7a600' },
+                    horzLine: { color: 'rgba(247,166,0,0.3)', labelBackgroundColor: '#f7a600' },
                 },
                 timeScale: {
-                    borderColor: '#2d3548',
+                    borderColor: '#2e2e33',
                     timeVisible: false,
                 },
                 rightPriceScale: {
-                    borderColor: '#2d3548',
+                    borderColor: '#2e2e33',
                 },
             });
 
             candleSeries = chart.addCandlestickSeries({
-                upColor: '#10b981',
-                downColor: '#ef4444',
-                borderUpColor: '#10b981',
-                borderDownColor: '#ef4444',
-                wickUpColor: '#10b981',
-                wickDownColor: '#ef4444',
+                upColor: '#20b26c',
+                downColor: '#ef454a',
+                borderUpColor: '#20b26c',
+                borderDownColor: '#ef454a',
+                wickUpColor: '#20b26c',
+                wickDownColor: '#ef454a',
             });
 
             buyPointSeries = chart.addLineSeries({
-                color: '#10b981',
+                color: '#f7a600',
                 lineWidth: 2,
                 lineStyle: LightweightCharts.LineStyle.Dotted,
                 title: 'Buy Point',
@@ -1110,7 +1861,7 @@
             window.addEventListener('resize', resize);
             resize();
 
-            loadChart(60);
+            loadChart(1000);
         }
 
         function setTimeframe(tf, btn) {
@@ -1151,17 +1902,19 @@
                 });
                 priceLines = [];
 
-                // DCA lines
-                const dcaColors = ['#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+                // DCA lines with order amounts
+                const dcaColors = ['#20b26c', '#f7a600', '#ef454a', '#9963d8', '#3bc3e8', '#ec4899'];
                 if (data.dca_lines) {
                     data.dca_lines.forEach((dca, idx) => {
+                        const balance = parseFloat(document.getElementById('cfg-balance').value) || 1000;
+                        const orderAmt = (balance * dca.balance_pct / 100).toFixed(0);
                         const pl = candleSeries.createPriceLine({
                             price: dca.price,
                             color: dcaColors[idx % dcaColors.length],
                             lineWidth: 1,
                             lineStyle: LightweightCharts.LineStyle.Dashed,
                             axisLabelVisible: true,
-                            title: `DCA-${dca.level} (${dca.drop_pct}%)`,
+                            title: `DCA-${dca.level} (${dca.drop_pct}%) · $${orderAmt}`,
                         });
                         priceLines.push(pl);
                     });
@@ -1171,7 +1924,7 @@
                 if (data.position_lines?.breakeven) {
                     const bePL = candleSeries.createPriceLine({
                         price: data.position_lines.breakeven,
-                        color: '#ffeb3b',
+                        color: '#f7a600',
                         lineWidth: 2,
                         lineStyle: LightweightCharts.LineStyle.Solid,
                         axisLabelVisible: true,
@@ -1183,7 +1936,7 @@
                 if (data.position_lines?.sell_target) {
                     const stPL = candleSeries.createPriceLine({
                         price: data.position_lines.sell_target,
-                        color: '#00e5ff',
+                        color: '#20b26c',
                         lineWidth: 2,
                         lineStyle: LightweightCharts.LineStyle.Solid,
                         axisLabelVisible: true,
@@ -1194,9 +1947,92 @@
 
                 chart.timeScale().fitContent();
 
+                // Strategy info panel
+                renderStrategyPanel(data.strategy);
+
             } catch (e) {
                 showToast('Ошибка загрузки графика: ' + e.message, 'error');
             }
+        }
+
+        function renderStrategyPanel(strategy) {
+            const panel = document.getElementById('strategy-panel');
+            if (!strategy) {
+                panel.style.display = 'none';
+                return;
+            }
+            panel.style.display = 'block';
+
+            // Signal badge
+            const signalEl = document.getElementById('strat-signal');
+            if (strategy.signal) {
+                signalEl.textContent = '✅ СИГНАЛ ПОКУПКИ';
+                signalEl.className = 'strategy-signal yes';
+            } else {
+                signalEl.textContent = '❌ Нет сигнала';
+                signalEl.className = 'strategy-signal no';
+            }
+
+            // 5 bars
+            const barsEl = document.getElementById('strat-bars');
+            let barsHtml = '';
+            strategy.calc_bars.forEach((bar, i) => {
+                const date = new Date(bar.time * 1000);
+                const dateStr = date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+                barsHtml += `
+                    <div class="strategy-bar">
+                        <div class="sb-label">Бар ${i + 1} · ${dateStr}</div>
+                        <div class="sb-range">$${bar.range.toLocaleString('en-US', {minimumFractionDigits: 0})}</div>
+                        <div class="sb-hl">H: ${bar.high.toLocaleString('en-US', {minimumFractionDigits: 0})} · L: ${bar.low.toLocaleString('en-US', {minimumFractionDigits: 0})}</div>
+                    </div>
+                `;
+            });
+            // Current bar (being checked)
+            if (strategy.current_bar) {
+                const cDate = new Date(strategy.current_bar.time * 1000);
+                const cDateStr = cDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+                barsHtml += `
+                    <div class="strategy-bar current">
+                        <div class="sb-label">Текущий · ${cDateStr}</div>
+                        <div class="sb-range" style="color:var(--accent-orange)">Low: $${strategy.current_bar.low.toLocaleString('en-US', {minimumFractionDigits: 0})}</div>
+                        <div class="sb-hl">${strategy.current_bar.low <= strategy.buy_point ? '⬇️ Касание!' : '⏳ Ожидание'}</div>
+                    </div>
+                `;
+            }
+            barsEl.innerHTML = barsHtml;
+
+            // Calculation summary
+            const calcEl = document.getElementById('strat-calc');
+            calcEl.innerHTML = `
+                <div class="strategy-calc-item">
+                    <div class="sc-label">Средний диапазон</div>
+                    <div class="sc-value orange">$${fmtPrice(strategy.average_range)}</div>
+                </div>
+                <div class="strategy-calc-item">
+                    <div class="sc-label">Buy Point</div>
+                    <div class="sc-value green">$${fmtPrice(strategy.buy_point)}</div>
+                </div>
+                <div class="strategy-calc-item">
+                    <div class="sc-label">Формула</div>
+                    <div class="sc-value cyan" style="font-size:11px">Close − AvgRange</div>
+                </div>
+            `;
+
+            // Also add markers on chart for the 5 bars used
+            try {
+                const markers = strategy.calc_bars.map((bar, i) => ({
+                    time: bar.time,
+                    position: 'aboveBar',
+                    color: '#f7a600',
+                    shape: 'circle',
+                    text: `${i + 1}`,
+                }));
+                // Only set if no backtest markers are active
+                const existingMarkers = candleSeries.markers?.() || [];
+                if (!existingMarkers || existingMarkers.length === 0) {
+                    candleSeries.setMarkers(markers);
+                }
+            } catch (e) { /* markers optional */ }
         }
 
         // ─── Bot Control ───
@@ -1208,6 +2044,7 @@
                     showToast(data.error, 'error');
                 } else {
                     showToast('Бот запущен! 🚀', 'success');
+                    addEvent('🚀', 'Бот запущен', document.getElementById('cfg-symbol').value, 'info');
                     startPolling();
                 }
             } catch (e) {
@@ -1223,6 +2060,7 @@
                     showToast(data.error, 'error');
                 } else {
                     showToast('Бот останавливается...', 'info');
+                    addEvent('🛑', 'Бот остановлен', '', 'info');
                 }
             } catch (e) {
                 showToast('Ошибка: ' + e.message, 'error');
@@ -1292,7 +2130,7 @@
                     showToast(data.error, 'error');
                 } else {
                     showToast('Конфигурация сохранена ✅', 'success');
-                    loadChart(60);
+                    loadChart(currentCandleCount);
                 }
             } catch (e) {
                 showToast('Ошибка: ' + e.message, 'error');
@@ -1364,6 +2202,9 @@
 
             if (logPollInterval) clearInterval(logPollInterval);
             logPollInterval = setInterval(pollLogs, 2000);
+
+            // Start countdown
+            startCountdown();
         }
 
         async function pollStatus() {
@@ -1386,34 +2227,286 @@
                     document.getElementById('btn-stop').disabled = true;
                 }
 
+                // Check interval from config
+                if (status.check_interval) {
+                    checkIntervalSec = status.check_interval;
+                }
+
+                // Reset countdown on each poll (bot just ticked)
+                if (status.running && status.ticks > 0) {
+                    resetCountdown();
+                }
+
                 // Metrics
-                if (status.last_price) {
-                    document.getElementById('m-price').textContent = '$' + status.last_price.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                const lastPrice = status.last_price;
+                if (lastPrice) {
+                    document.getElementById('m-price').textContent = '$' + fmtPrice(lastPrice);
                     document.getElementById('m-symbol').textContent = document.getElementById('cfg-symbol').value;
                 }
 
                 if (status.last_indicator) {
                     const ind = status.last_indicator;
-                    document.getElementById('m-buypoint').textContent = '$' + ind.buy_point.toLocaleString('en-US', { minimumFractionDigits: 2 });
-                    document.getElementById('m-avgrange').textContent = 'avg range: $' + ind.average_range.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                    document.getElementById('m-buypoint').textContent = '$' + fmtPrice(ind.buy_point);
+                    document.getElementById('m-avgrange').textContent = 'avg range: $' + fmtPrice(ind.average_range);
                     document.getElementById('m-signal').textContent = ind.signal ? '✅ ДА' : '❌ НЕТ';
                     document.getElementById('m-signal').className = 'metric-value ' + (ind.signal ? 'positive' : '');
+
+                    // EVENT: Signal detected
+                    if (ind.signal && prevSignalState === false) {
+                        addEvent('🟢', 'Сигнал покупки!', `Buy Point: $${fmtPrice(ind.buy_point)}`, 'buy');
+                    }
+                    prevSignalState = ind.signal;
                 }
 
                 if (status.ticks) {
                     document.getElementById('m-ticks').textContent = `Проверок: ${status.ticks}`;
                 }
 
-                // Position
-                updatePositionPanel(status.position);
+                // Position & P&L
+                const pos = status.position;
+                updatePositionPanel(pos);
 
-                if (status.position) {
-                    document.getElementById('m-breakeven').textContent = '$' + status.position.breakeven.toLocaleString('en-US', { minimumFractionDigits: 2 });
-                    document.getElementById('m-selltarget').textContent = '$' + status.position.sell_target.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                if (pos && lastPrice) {
+                    document.getElementById('m-breakeven').textContent = '$' + fmtPrice(pos.breakeven);
+                    document.getElementById('m-selltarget').textContent = '$' + fmtPrice(pos.sell_target);
+
+                    // Live P&L
+                    const currentValue = lastPrice * pos.total_qty;
+                    const invested = pos.total_invested;
+                    const pnl = currentValue - invested;
+                    const pnlPct = invested > 0 ? (pnl / invested * 100) : 0;
+
+                    const pnlEl = document.getElementById('m-pnl');
+                    pnlEl.textContent = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`;
+                    pnlEl.className = 'metric-value ' + (pnl >= 0 ? 'positive' : 'negative');
+                    document.getElementById('m-pnl-pct').textContent = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
+                    document.getElementById('m-pnl-pct').style.color = pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+
+                    // Progress bar
+                    updateProgressBar(lastPrice, pos);
+
+                    // EVENT: DCA level filled
+                    if (pos.current_level > prevPositionLevel && prevPositionLevel > 0) {
+                        addEvent('📥', `DCA-${pos.current_level} исполнен`, `Безубыток: $${fmtPrice(pos.breakeven)}`, 'dca');
+                    }
+                    prevPositionLevel = pos.current_level;
+                } else {
+                    // No position
+                    document.getElementById('m-pnl').textContent = '—';
+                    document.getElementById('m-pnl').className = 'metric-value';
+                    document.getElementById('m-pnl-pct').textContent = '';
+                    document.getElementById('progress-section').style.display = 'none';
+                    prevPositionLevel = 0;
                 }
 
             } catch (e) {
                 // silent
+            }
+        }
+
+        // ─── Countdown Timer ───
+        function startCountdown() {
+            if (countdownTimer) clearInterval(countdownTimer);
+            countdownSeconds = checkIntervalSec;
+            updateCountdownDisplay();
+            countdownTimer = setInterval(() => {
+                countdownSeconds--;
+                if (countdownSeconds < 0) countdownSeconds = 0;
+                updateCountdownDisplay();
+            }, 1000);
+        }
+
+        function resetCountdown() {
+            countdownSeconds = checkIntervalSec;
+            updateCountdownDisplay();
+        }
+
+        function updateCountdownDisplay() {
+            const textEl = document.getElementById('countdown-text');
+            const circleEl = document.getElementById('countdown-circle');
+            const subEl = document.getElementById('countdown-sub');
+
+            if (!textEl) return;
+            textEl.textContent = countdownSeconds;
+
+            // Ring animation: circumference = 2πr = 2*π*17 ≈ 106.8
+            const circ = 106.8;
+            const offset = circ * (1 - countdownSeconds / checkIntervalSec);
+            circleEl.style.strokeDashoffset = offset;
+
+            // Color: green when plenty of time, orange/red when near 0
+            if (countdownSeconds <= 5) {
+                circleEl.style.stroke = 'var(--accent-red)';
+            } else if (countdownSeconds <= 15) {
+                circleEl.style.stroke = 'var(--accent-orange)';
+            } else {
+                circleEl.style.stroke = 'var(--accent-green)';
+            }
+
+            subEl.textContent = `каждые ${checkIntervalSec}с`;
+        }
+
+        // ─── Progress Bar ───
+        function updateProgressBar(price, pos) {
+            const section = document.getElementById('progress-section');
+            section.style.display = 'block';
+
+            const breakeven = pos.breakeven;
+            const sellTarget = pos.sell_target;
+
+            // Find lowest DCA level
+            let lowestDCA = breakeven;
+            if (pos.entries && pos.entries.length > 0) {
+                lowestDCA = Math.min(...pos.entries.map(e => e.target_price));
+            }
+
+            // Range: lowestDCA to sellTarget
+            const range = sellTarget - lowestDCA;
+            if (range <= 0) return;
+
+            // Price position as percentage
+            let pricePct = ((price - lowestDCA) / range) * 100;
+            pricePct = Math.max(0, Math.min(100, pricePct));
+
+            // Breakeven position
+            let bePct = ((breakeven - lowestDCA) / range) * 100;
+            bePct = Math.max(0, Math.min(100, bePct));
+
+            // PnL percentage relative to breakeven
+            const pnlPct = breakeven > 0 ? ((price - breakeven) / breakeven * 100) : 0;
+
+            // Fill bar
+            const fill = document.getElementById('progress-fill');
+            fill.style.width = pricePct + '%';
+            fill.className = 'progress-bar-fill ' + (price >= breakeven ? 'positive' : 'negative');
+
+            // Badge
+            const badge = document.getElementById('progress-pct-badge');
+            badge.textContent = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
+            badge.className = 'progress-pct-badge' + (pnlPct >= 0 ? ' positive' : '');
+
+            // Price marker + BE marker
+            const wrapper = document.getElementById('progress-fill').parentElement;
+            // Remove old markers
+            wrapper.querySelectorAll('.progress-marker').forEach(m => m.remove());
+
+            // BE marker
+            const beM = document.createElement('div');
+            beM.className = 'progress-marker be-marker';
+            beM.style.left = bePct + '%';
+            beM.title = `Безубыток: $${fmtPrice(breakeven)}`;
+            wrapper.appendChild(beM);
+
+            // Price marker
+            const prM = document.createElement('div');
+            prM.className = 'progress-marker price-marker';
+            prM.style.left = pricePct + '%';
+            prM.title = `Цена: $${fmtPrice(price)}`;
+            wrapper.appendChild(prM);
+
+            // Labels
+            document.getElementById('prog-low').textContent = `$${lowestDCA.toLocaleString('en-US', {minimumFractionDigits: 0})}`;
+            document.getElementById('prog-be').textContent = `BE: $${breakeven.toLocaleString('en-US', {minimumFractionDigits: 0})}`;
+            document.getElementById('prog-sell').textContent = `TP: $${sellTarget.toLocaleString('en-US', {minimumFractionDigits: 0})}`;
+        }
+
+        // ─── Event Log ───
+        function addEvent(icon, title, detail, type) {
+            const now = new Date();
+            const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            eventsList.unshift({ icon, title, detail, time, type });
+            if (eventsList.length > 50) eventsList.pop(); // keep max 50
+
+            renderEvents();
+
+            // Notifications
+            if (notificationsEnabled) {
+                playNotifSound(type);
+                sendBrowserNotification(title, detail);
+            }
+        }
+
+        function renderEvents() {
+            const container = document.getElementById('event-container');
+            if (eventsList.length === 0) {
+                container.innerHTML = '<div class="event-empty">Нет событий. Запустите бота.</div>';
+                return;
+            }
+            container.innerHTML = eventsList.map(e => `
+                <div class="event-item">
+                    <div class="event-icon">${e.icon}</div>
+                    <div class="event-body">
+                        <div class="event-title">${e.title}</div>
+                        <div class="event-detail">${e.detail}</div>
+                    </div>
+                    <div class="event-time">${e.time}</div>
+                </div>
+            `).join('');
+        }
+
+        function clearEvents() {
+            eventsList = [];
+            renderEvents();
+        }
+
+        // ─── Sound & Browser Notifications ───
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playNotifSound(type) {
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                gain.gain.value = 0.15;
+
+                if (type === 'buy') {
+                    osc.frequency.value = 880; // High A
+                    osc.type = 'sine';
+                } else if (type === 'sell') {
+                    osc.frequency.value = 1320; // High E
+                    osc.type = 'sine';
+                } else if (type === 'dca') {
+                    osc.frequency.value = 660; // E
+                    osc.type = 'triangle';
+                } else {
+                    osc.frequency.value = 440; // A
+                    osc.type = 'sine';
+                }
+
+                osc.start();
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+                osc.stop(audioCtx.currentTime + 0.4);
+            } catch (e) { /* silent */ }
+        }
+
+        function sendBrowserNotification(title, body) {
+            if (Notification.permission === 'granted') {
+                new Notification('DCA Bot: ' + title, { body, icon: '⚡' });
+            }
+        }
+
+        function toggleNotifications() {
+            notificationsEnabled = !notificationsEnabled;
+
+            // Request permission if enabling
+            if (notificationsEnabled && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+
+            // Update buttons
+            const btns = document.querySelectorAll('.notif-toggle');
+            btns.forEach(btn => {
+                btn.classList.toggle('active', notificationsEnabled);
+                btn.title = notificationsEnabled ? 'Уведомления включены' : 'Включить уведомления';
+            });
+
+            if (notificationsEnabled) {
+                playNotifSound('info');
+                showToast('🔔 Уведомления включены', 'success');
+            } else {
+                showToast('🔕 Уведомления выключены', 'info');
             }
         }
 
@@ -1438,11 +2531,11 @@
         <div class="position-summary">
             <div class="pos-stat">
                 <div class="pos-stat-label">Безубыточность</div>
-                <div class="pos-stat-value" style="color:var(--accent-orange)">$${pos.breakeven.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                <div class="pos-stat-value" style="color:var(--accent-orange)">$${fmtPrice(pos.breakeven)}</div>
             </div>
             <div class="pos-stat">
                 <div class="pos-stat-label">Цель продажи</div>
-                <div class="pos-stat-value" style="color:var(--accent-cyan)">$${pos.sell_target.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                <div class="pos-stat-value" style="color:var(--accent-cyan)">$${fmtPrice(pos.sell_target)}</div>
             </div>
             <div class="pos-stat">
                 <div class="pos-stat-label">Вложено</div>
@@ -1462,7 +2555,7 @@
                 <div class="dca-level ${e.filled ? 'filled' : 'pending'}">${e.level}</div>
                 <div class="dca-info">
                     <div class="dca-price" style="color:${e.filled ? 'var(--accent-green)' : 'var(--text-secondary)'}">
-                        $${price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        $${fmtPrice(price)}
                     </div>
                     <div class="dca-detail">${e.filled ? '✅ Исполнен' : '⏳ Ожидание'} — ${e.qty.toFixed(6)} шт.</div>
                 </div>
@@ -1520,23 +2613,458 @@
             return div.innerHTML;
         }
 
+        function fmtPrice(p) {
+            if (p >= 1000) return p.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            if (p >= 1) return p.toFixed(4);
+            if (p >= 0.01) return p.toFixed(6);
+            if (p >= 0.0001) return p.toFixed(8);
+            if (p >= 0.000001) return p.toFixed(10);
+            if (p >= 0.00000001) return p.toFixed(12);
+            if (p >= 0.0000000001) return p.toFixed(14);
+            if (p >= 0.000000000001) return p.toFixed(16);
+            if (p >= 0.00000000000001) return p.toFixed(18);
+            return p.toFixed(20);
+        }
+
+        // ─── Backtest ───
+        async function runBacktest() {
+            const btn = document.getElementById('btn-backtest');
+            btn.disabled = true;
+            btn.textContent = '⏳ Загрузка...';
+
+            const symbol = document.getElementById('cfg-symbol').value || 'BTCUSDT';
+            const interval = currentTimeframe;
+            const sellPct = document.getElementById('cfg-sellpct').value || 1.0;
+            const balance = document.getElementById('cfg-balance').value || 1000;
+            const lookback = document.getElementById('cfg-lookback').value || 5;
+
+            try {
+                const dcaPoints = getDCAPoints();
+                const resp = await fetch('/api/backtest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        symbol: symbol,
+                        interval: interval,
+                        limit: currentCandleCount,
+                        sell_pct: parseFloat(sellPct),
+                        balance: parseFloat(balance),
+                        lookback: parseInt(lookback),
+                        dca_points: dcaPoints,
+                    }),
+                });
+                const data = await resp.json();
+
+                if (data.error) {
+                    showToast('Ошибка бэктеста: ' + data.error, 'error');
+                    return;
+                }
+
+                // Показываем маркеры на графике
+                const allMarkers = [];
+                data.buy_markers.forEach(m => allMarkers.push(m));
+                data.sell_markers.forEach(m => allMarkers.push(m));
+
+                // Сортируем по времени (Lightweight Charts требует)
+                allMarkers.sort((a, b) => a.time - b.time);
+                candleSeries.setMarkers(allMarkers);
+
+                // Рисуем линию buy_point
+                if (data.buy_points && data.buy_points.length > 0) {
+                    buyPointSeries.setData(data.buy_points);
+                }
+
+                // Сохраняем trades для кликов
+                window._backtestTrades = data.trades;
+
+                // Показываем панель
+                document.getElementById('backtest-panel').style.display = 'block';
+
+                // Статистика
+                const s = data.stats;
+                const statsHtml = `
+                    <div class="bt-stat">
+                        <div class="bt-label">Циклов</div>
+                        <div class="bt-value neutral">${s.total_cycles} (${s.closed_cycles} закр. / ${s.open_cycles} откр.)</div>
+                    </div>
+                    <div class="bt-stat">
+                        <div class="bt-label">Всего покупок</div>
+                        <div class="bt-value neutral">${s.total_trades}</div>
+                    </div>
+                    <div class="bt-stat">
+                        <div class="bt-label">Ср. DCA за цикл</div>
+                        <div class="bt-value" style="color:var(--accent-orange)">${s.avg_dca_count || '—'}</div>
+                    </div>
+                    <div class="bt-stat">
+                        <div class="bt-label">Win Rate</div>
+                        <div class="bt-value ${s.win_rate >= 50 ? 'positive' : 'negative'}">${s.win_rate}%</div>
+                    </div>
+                    <div class="bt-stat">
+                        <div class="bt-label">P&L (закрытые)</div>
+                        <div class="bt-value ${s.closed_pnl >= 0 ? 'positive' : 'negative'}">$${s.closed_pnl.toFixed(2)}</div>
+                    </div>
+                    <div class="bt-stat">
+                        <div class="bt-label">Общий P&L</div>
+                        <div class="bt-value ${s.total_pnl >= 0 ? 'positive' : 'negative'}">$${s.total_pnl.toFixed(2)}</div>
+                    </div>
+                    <div class="bt-stat">
+                        <div class="bt-label">ROI</div>
+                        <div class="bt-value ${s.roi >= 0 ? 'positive' : 'negative'}">${s.roi}%</div>
+                    </div>
+                    <div class="bt-stat">
+                        <div class="bt-label">Лучший цикл</div>
+                        <div class="bt-value positive">$${s.best_trade.toFixed(2)}</div>
+                    </div>
+                    <div class="bt-stat">
+                        <div class="bt-label">Худший цикл</div>
+                        <div class="bt-value negative">$${s.worst_trade.toFixed(2)}</div>
+                    </div>
+                    <div class="bt-stat">
+                        <div class="bt-label">Средний P&L</div>
+                        <div class="bt-value ${s.avg_pnl >= 0 ? 'positive' : 'negative'}">$${s.avg_pnl.toFixed(2)}</div>
+                    </div>
+                `;
+                document.getElementById('backtest-stats').innerHTML = statsHtml;
+
+                // Таблица сделок
+                const tbody = document.getElementById('trades-tbody');
+                tbody.innerHTML = '';
+                data.trades.forEach((t, i) => {
+                    const entryDate = new Date(t.entry_time * 1000).toLocaleDateString('ru-RU');
+                    const exitDate = t.exit_time ? new Date(t.exit_time * 1000).toLocaleDateString('ru-RU') : '—';
+                    const pnlCls = t.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+                    const statusCls = t.result === 'open' ? 'status-open' : 'status-win';
+                    const statusText = t.result === 'open' ? '🔓 Открыта' : '✅ Закрыта';
+
+                    const levelText = t.level === 1 ? 'BUY' : `DCA-${t.level}`;
+                    const levelColor = t.level === 1 ? 'var(--accent-green)' : 'var(--accent-orange)';
+
+                    const tr = document.createElement('tr');
+                    tr.style.cursor = 'pointer';
+                    tr.dataset.tradeIdx = i;
+                    tr.addEventListener('click', () => showTradeCalc(i));
+                    tr.innerHTML = `
+                        <td>${i + 1}</td>
+                        <td style="color:${levelColor};font-weight:600">${levelText}</td>
+                        <td>${entryDate}</td>
+                        <td>${exitDate}</td>
+                        <td>$${fmtPrice(t.entry_price)}</td>
+                        <td>$${fmtPrice(t.exit_price)}</td>
+                        <td>$${t.order_size.toFixed(0)}</td>
+                        <td class="${pnlCls}">${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}</td>
+                        <td class="${pnlCls}">${t.pnl_pct >= 0 ? '+' : ''}${t.pnl_pct.toFixed(2)}%</td>
+                        <td class="${statusCls}">${statusText}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                showToast(`Бэктест: ${s.total_trades} сделок, P&L: $${s.total_pnl.toFixed(2)}`, s.total_pnl >= 0 ? 'success' : 'error');
+
+                // Прокручиваем к результатам
+                document.getElementById('backtest-panel').scrollIntoView({ behavior: 'smooth' });
+
+            } catch (e) {
+                showToast('Ошибка: ' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🧪 Бэктест';
+            }
+        }
+
+        function hideBacktest() {
+            document.getElementById('backtest-panel').style.display = 'none';
+            document.getElementById('calc-panel').className = 'calc-panel';
+            // Убираем маркеры с графика
+            candleSeries.setMarkers([]);
+        }
+
+        function showTradeCalc(idx) {
+            const trades = window._backtestTrades;
+            if (!trades || !trades[idx]) return;
+            const t = trades[idx];
+
+            // Выделяем строку в таблице
+            document.querySelectorAll('#trades-tbody tr').forEach(r => r.classList.remove('selected'));
+            const row = document.querySelector(`#trades-tbody tr[data-trade-idx="${idx}"]`);
+            if (row) row.classList.add('selected');
+
+            // Скроллим график к этой сделке
+            chart.timeScale().scrollToPosition(-0, false);
+            const timePoint = t.entry_time;
+            chart.timeScale().setVisibleRange({
+                from: timePoint - 86400 * 15,
+                to: timePoint + 86400 * 10,
+            });
+
+            const panel = document.getElementById('calc-panel');
+
+            if (t.level === 1 && t.calc) {
+                // Показываем полный расчёт для BUY (DCA-1)
+                const c = t.calc;
+                const barsRows = c.bars.map((b, i) => {
+                    const d = new Date(b.time * 1000).toLocaleDateString('ru-RU');
+                    return `<tr>
+                        <td style="text-align:left">${i + 1}</td>
+                        <td style="text-align:left">${d}</td>
+                        <td>$${fmtPrice(b.high)}</td>
+                        <td>$${fmtPrice(b.low)}</td>
+                        <td style="color:var(--accent-orange);font-weight:600">$${fmtPrice(b.range)}</td>
+                    </tr>`;
+                }).join('');
+
+                const signalDate = new Date(c.signal_bar_time * 1000).toLocaleDateString('ru-RU');
+
+                panel.innerHTML = `
+                    <div class="calc-title">📐 Расчёт покупки #${idx + 1}</div>
+
+                    <div class="calc-step">
+                        <div class="calc-step-title">Шаг 1: Берём ${c.bars.length} дневных баров</div>
+                        <div class="calc-step-content">
+                            Считаем диапазон (High − Low) каждого бара:
+                            <table class="calc-bars-table">
+                                <thead><tr>
+                                    <th style="text-align:left">#</th>
+                                    <th style="text-align:left">Дата</th>
+                                    <th>High</th>
+                                    <th>Low</th>
+                                    <th>Диапазон</th>
+                                </tr></thead>
+                                <tbody>${barsRows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="calc-step">
+                        <div class="calc-step-title">Шаг 2: Средний диапазон (Average Range)</div>
+                        <div class="calc-step-content">
+                            Σ диапазонов / ${c.bars.length} = <b style="color:var(--accent-orange)">$${fmtPrice(c.avg_range)}</b>
+                        </div>
+                    </div>
+
+                    <div class="calc-step">
+                        <div class="calc-step-title">Шаг 3: Точка покупки (Buy Point)</div>
+                        <div class="calc-step-content">
+                            Close предыдущего бара − Average Range<br>
+                            $${fmtPrice(c.prev_close)} − $${fmtPrice(c.avg_range)} = <b style="color:var(--accent-green)">$${fmtPrice(c.buy_point)}</b>
+                        </div>
+                    </div>
+
+                    <div class="calc-step buy-step">
+                        <div class="calc-step-title">Шаг 4: Сигнал покупки ✅</div>
+                        <div class="calc-step-content">
+                            На баре ${signalDate}:<br>
+                            Low ($${fmtPrice(c.signal_bar_low)}) ≤ Buy Point ($${fmtPrice(c.buy_point)}) → <b style="color:var(--accent-green)">ПОКУПКА!</b><br>
+                            Цена входа: <b>$${fmtPrice(t.entry_price)}</b>, сумма: <b>$${t.order_size.toFixed(0)}</b>
+                        </div>
+                    </div>
+                `;
+                panel.className = 'calc-panel visible';
+            } else if (t.level > 1) {
+                // DCA-уровень
+                panel.innerHTML = `
+                    <div class="calc-title">📐 DCA-${t.level} покупка #${idx + 1}</div>
+                    <div class="calc-step">
+                        <div class="calc-step-title">Усреднение (DCA-${t.level})</div>
+                        <div class="calc-step-content">
+                            Цена первого входа в цикле упала достаточно для DCA-${t.level}.<br>
+                            Цена входа: <b>$${fmtPrice(t.entry_price)}</b>, сумма: <b>$${t.order_size.toFixed(0)}</b><br>
+                            Безубыточность цикла: <b>$${fmtPrice(t.breakeven)}</b>
+                        </div>
+                    </div>
+                `;
+                panel.className = 'calc-panel visible';
+            } else {
+                panel.className = 'calc-panel';
+            }
+
+            // Скроллим к панели расчёта
+            panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // ─── Symbol Selector ───
+        let symbolSearchTimeout = null;
+        let symbolsCache = [];
+
+        function initSymbolSelector() {
+            const input = document.getElementById('cfg-symbol');
+            const dropdown = document.getElementById('symbol-dropdown');
+
+            // При фокусе — загружаем список и показываем
+            input.addEventListener('focus', () => {
+                loadSymbols(input.value);
+                dropdown.classList.add('open');
+            });
+
+            // При вводе — фильтруем с задержкой
+            input.addEventListener('input', () => {
+                clearTimeout(symbolSearchTimeout);
+                symbolSearchTimeout = setTimeout(() => {
+                    loadSymbols(input.value);
+                }, 300);
+                dropdown.classList.add('open');
+            });
+
+            // Закрываем по клику вне
+            document.addEventListener('click', (e) => {
+                const selector = document.getElementById('symbol-selector');
+                if (!selector.contains(e.target)) {
+                    dropdown.classList.remove('open');
+                }
+            });
+
+            // Навигация клавиатурой
+            input.addEventListener('keydown', (e) => {
+                const items = dropdown.querySelectorAll('.symbol-item');
+                const active = dropdown.querySelector('.symbol-item.active');
+                let idx = Array.from(items).indexOf(active);
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (idx < items.length - 1) idx++;
+                    items.forEach(i => i.classList.remove('active'));
+                    if (items[idx]) {
+                        items[idx].classList.add('active');
+                        items[idx].scrollIntoView({ block: 'nearest' });
+                    }
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (idx > 0) idx--;
+                    items.forEach(i => i.classList.remove('active'));
+                    if (items[idx]) {
+                        items[idx].classList.add('active');
+                        items[idx].scrollIntoView({ block: 'nearest' });
+                    }
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (active) {
+                        selectSymbol(active.dataset.symbol);
+                    } else if (items.length > 0) {
+                        selectSymbol(items[0].dataset.symbol);
+                    }
+                } else if (e.key === 'Escape') {
+                    dropdown.classList.remove('open');
+                }
+            });
+        }
+
+        async function loadSymbols(search) {
+            const dropdown = document.getElementById('symbol-dropdown');
+            dropdown.innerHTML = '<div class="symbol-loading">🔍 Поиск...</div>';
+
+            try {
+                const resp = await fetch(`/api/symbols?search=${encodeURIComponent(search || '')}&limit=30`);
+                const data = await resp.json();
+
+                if (data.error) {
+                    dropdown.innerHTML = '<div class="symbol-loading">Ошибка загрузки</div>';
+                    return;
+                }
+
+                if (data.symbols.length === 0) {
+                    dropdown.innerHTML = '<div class="symbol-loading">Ничего не найдено</div>';
+                    return;
+                }
+
+                symbolsCache = data.symbols;
+                renderSymbolList(data.symbols);
+
+            } catch (e) {
+                dropdown.innerHTML = '<div class="symbol-loading">Ошибка: ' + e.message + '</div>';
+            }
+        }
+
+        function renderSymbolList(symbols) {
+            const dropdown = document.getElementById('symbol-dropdown');
+            dropdown.innerHTML = '';
+
+            symbols.forEach(s => {
+                const div = document.createElement('div');
+                div.className = 'symbol-item';
+                div.dataset.symbol = s.symbol;
+
+                const changeCls = s.change24h >= 0 ? 'positive' : 'negative';
+                const changeSign = s.change24h >= 0 ? '+' : '';
+                const vol = s.volume24h >= 1e9 ? (s.volume24h / 1e9).toFixed(1) + 'B' :
+                    s.volume24h >= 1e6 ? (s.volume24h / 1e6).toFixed(1) + 'M' :
+                        s.volume24h >= 1e3 ? (s.volume24h / 1e3).toFixed(1) + 'K' :
+                            s.volume24h.toFixed(0);
+
+                div.innerHTML = `
+                    <span class="sym-name">${s.symbol}</span>
+                    <span class="sym-info">
+                        <span class="sym-price">$${fmtPrice(parseFloat(s.price))}</span>
+                        <span class="sym-change ${changeCls}">${changeSign}${s.change24h.toFixed(2)}%</span>
+                    </span>
+                `;
+
+                div.addEventListener('click', () => selectSymbol(s.symbol));
+                dropdown.appendChild(div);
+            });
+        }
+
+        function selectSymbol(symbol) {
+            const input = document.getElementById('cfg-symbol');
+            const dropdown = document.getElementById('symbol-dropdown');
+
+            input.value = symbol;
+            dropdown.classList.remove('open');
+
+            // Перезагружаем график для новой пары
+            loadChart(currentCandleCount);
+
+            // Обновляем метрики (цена, buy point, сигнал) для новой пары
+            refreshIndicatorMetrics(symbol);
+
+            showToast(`Пара: ${symbol}`, 'info');
+        }
+
+        function refreshIndicatorMetrics(symbol) {
+            symbol = symbol || document.getElementById('cfg-symbol').value || 'BTCUSDT';
+            fetch(`/api/indicator?symbol=${encodeURIComponent(symbol)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) return;
+                    document.getElementById('m-price').textContent = '$' + fmtPrice(data.current_price || 0);
+                    document.getElementById('m-symbol').textContent = data.symbol || symbol;
+                    document.getElementById('m-buypoint').textContent = '$' + fmtPrice(data.buy_point || 0);
+                    document.getElementById('m-avgrange').textContent = 'avg range: $' + fmtPrice(data.average_range || 0);
+                    document.getElementById('m-signal').textContent = data.signal ? '✅ ДА' : '❌ НЕТ';
+                    document.getElementById('m-signal').className = 'metric-value ' + (data.signal ? 'positive' : '');
+                    prevSignalState = data.signal;
+                })
+                .catch(() => { });
+        }
+
         // ─── Init ───
         document.addEventListener('DOMContentLoaded', () => {
             initChart();
             loadConfig();
+            initSymbolSelector();
             startPolling();
 
+            // Read check_interval from config field
+            checkIntervalSec = parseInt(document.getElementById('cfg-interval').value) || 60;
+            startCountdown();
+
             // Also poll indicator on load
-            fetch('/api/indicator').then(r => r.json()).then(data => {
-                if (!data.error) {
-                    document.getElementById('m-price').textContent = '$' + (data.current_price || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
-                    document.getElementById('m-symbol').textContent = data.symbol;
-                    document.getElementById('m-buypoint').textContent = '$' + (data.buy_point || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
-                    document.getElementById('m-avgrange').textContent = 'avg range: $' + (data.average_range || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
-                    document.getElementById('m-signal').textContent = data.signal ? '✅ ДА' : '❌ НЕТ';
-                    document.getElementById('m-signal').className = 'metric-value ' + (data.signal ? 'positive' : '');
-                }
-            }).catch(() => { });
+            refreshIndicatorMetrics();
+
+            // Add bot start/stop events
+            const origStart = window.startBot;
+            const origStop = window.stopBot;
+            // We track events from pollStatus — no need to override
+
+            // Info tooltips: position fixed on hover
+            document.querySelectorAll('.info-icon').forEach(icon => {
+                icon.addEventListener('mouseenter', () => {
+                    const tooltip = icon.querySelector('.info-tooltip');
+                    if (!tooltip) return;
+                    const rect = icon.getBoundingClientRect();
+                    // Show below the icon
+                    tooltip.style.top = (rect.bottom + 8) + 'px';
+                    tooltip.style.left = Math.max(8, rect.left - 100) + 'px';
+                });
+            });
         });
     </script>
 

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.log
+bot.log
+bot_state.json
+.env
+*.csv
+venv/
+.venv/

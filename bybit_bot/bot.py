@@ -193,36 +193,36 @@ class TradingBot:
         logger.info(f"{'═' * 50}")
         logger.info(f"⏰ Проверка: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        # 1. Получаем свечи
-        klines = self.client.get_klines(
-            symbol=self.symbol,
-            interval=self.timeframe,
-            limit=self.lookback + 10,  # Запас
-        )
-
-        closes = klines["closes"]
-        highs = klines["highs"]
-        lows = klines["lows"]
-
-        # 2. Рассчитываем индикатор
-        indicator = get_indicator_data(closes, highs, lows, self.lookback)
-
-        logger.info(
-            f"📊 Индикатор: close=${indicator['current_close']:.2f}, "
-            f"avg_range=${indicator['average_range']:.2f}, "
-            f"buy_point=${indicator['buy_point']:.2f}, "
-            f"signal={'YES' if indicator['signal'] else 'NO'}"
-        )
-
-        # 3. Текущая цена
+        # Текущая цена — нужна всегда
         current_price = self.client.get_current_price(self.symbol)
         logger.info(f"💲 Текущая цена: ${current_price:.2f}")
 
-        # 4. Если нет позиции — ждём сигнал
         if self.position is None or not self.position.is_active:
+            # ── НЕТ ПОЗИЦИИ: проверяем сигнал по ДНЕВНЫМ свечам ──
+            # Сигнал покупки определяется ТОЛЬКО по дневному ТФ (5 баров)
+            klines = self.client.get_klines(
+                symbol=self.symbol,
+                interval=config.SIGNAL_TIMEFRAME,  # Всегда "D" — дневной
+                limit=self.lookback + 10,
+            )
+
+            closes = klines["closes"]
+            highs = klines["highs"]
+            lows = klines["lows"]
+
+            indicator = get_indicator_data(closes, highs, lows, self.lookback)
+
+            logger.info(
+                f"📊 Индикатор (дневной): close=${indicator['current_close']:.2f}, "
+                f"avg_range=${indicator['average_range']:.2f}, "
+                f"buy_point=${indicator['buy_point']:.2f}, "
+                f"signal={'YES' if indicator['signal'] else 'NO'}"
+            )
+
             self._handle_no_position(indicator, current_price)
         else:
-            # 5. Если есть позиция — проверяем DCA и продажу
+            # ── ЕСТЬ ПОЗИЦИЯ: DCA и продажа по текущей цене (каждые 60 сек) ──
+            # Дневные свечи НЕ запрашиваются — DCA/sell работают в реальном времени
             self._handle_active_position(current_price)
 
     def _handle_no_position(self, indicator: dict, current_price: float):

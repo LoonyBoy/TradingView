@@ -112,7 +112,18 @@ def bot_loop():
         # Загружаем инструмент
         try:
             instrument = client.get_instrument_info(config.SYMBOL)
-        except Exception:
+        except Exception as e:
+            err_msg = str(e)
+            if "Not supported" in err_msg or "ErrCode: 10001" in err_msg or "list index" in err_msg:
+                mode = "тестнете" if config.BYBIT_TESTNET else "production"
+                web_logger.error(
+                    f"⛔ Пара {config.SYMBOL} не найдена на {mode}! "
+                    f"Смените символ или переключите режим (Testnet/Production)."
+                )
+                bot_state["error"] = f"Пара {config.SYMBOL} не поддерживается на {mode}"
+                bot_state["running"] = False
+                return
+            web_logger.warning(f"Не удалось получить инструмент: {e}, используем приблизительные параметры")
             instrument = {"min_qty": 0.00001, "qty_step": 0.00001, "price_step": 0.01, "min_order_amt": 1.0}
 
         # Восстанавливаем состояние
@@ -125,36 +136,34 @@ def bot_loop():
             try:
                 bot_state["ticks"] += 1
 
-                # Получаем свечи
-                klines = client.get_klines(
-                    symbol=config.SYMBOL,
-                    interval=config.TIMEFRAME,
-                    limit=config.LOOKBACK_PERIOD + 10,
-                )
-
-                closes = klines["closes"]
-                highs = klines["highs"]
-                lows = klines["lows"]
-
-                # Индикатор
-                indicator = get_indicator_data(closes, highs, lows, config.LOOKBACK_PERIOD)
-                bot_state["last_indicator"] = indicator
-
-                # Текущая цена
+                # Текущая цена — нужна всегда (каждые 60 сек)
                 price = client.get_current_price(config.SYMBOL)
                 bot_state["last_price"] = price
                 bot_state["last_tick"] = datetime.now().isoformat()
 
-                web_logger.info(
-                    f"📊 {config.SYMBOL}: ${price:,.2f} | "
-                    f"Buy Point: ${indicator['buy_point']:,.2f} | "
-                    f"Signal: {'✅' if indicator['signal'] else '❌'}"
-                )
-
                 position = bot_state["position"]
 
-                # --- Нет позиции: ищем сигнал ---
+                # --- Нет позиции: проверяем сигнал по ДНЕВНЫМ свечам ---
                 if position is None or not position.is_active:
+                    # Дневные свечи запрашиваем ТОЛЬКО для поиска сигнала покупки
+                    klines = client.get_klines(
+                        symbol=config.SYMBOL,
+                        interval=config.SIGNAL_TIMEFRAME,  # Всегда "D"
+                        limit=config.LOOKBACK_PERIOD + 10,
+                    )
+
+                    closes = klines["closes"]
+                    highs = klines["highs"]
+                    lows = klines["lows"]
+
+                    indicator = get_indicator_data(closes, highs, lows, config.LOOKBACK_PERIOD)
+                    bot_state["last_indicator"] = indicator
+
+                    web_logger.info(
+                        f"📊 {config.SYMBOL}: ${price:,.2f} | "
+                        f"Buy Point (D): ${indicator['buy_point']:,.2f} | "
+                        f"Signal: {'✅' if indicator['signal'] else '❌'}"
+                    )
                     if indicator["signal"]:
                         web_logger.info("🟢 СИГНАЛ ПОКУПКИ!")
                         first_price = indicator["signal_price"]
@@ -206,8 +215,13 @@ def bot_loop():
                     else:
                         web_logger.info("⏳ Ожидание сигнала...")
 
-                # --- Есть позиция ---
+                # --- Есть позиция: DCA и продажа по текущей цене (каждые 60 сек) ---
                 else:
+                    web_logger.info(
+                        f"📈 {config.SYMBOL}: ${price:,.2f} | "
+                        f"Breakeven: ${position.breakeven:,.2f} | "
+                        f"DCA {position.current_dca_level}/{len(position.entries)}"
+                    )
                     # Проверяем DCA fills
                     for entry in position.entries:
                         if entry.filled or entry.order_id is None:
@@ -251,8 +265,19 @@ def bot_loop():
                         bot_state["position"] = position
 
             except Exception as e:
-                web_logger.error(f"Ошибка в цикле: {e}")
-                bot_state["error"] = str(e)
+                err_msg = str(e)
+                web_logger.error(f"Ошибка в цикле: {err_msg}")
+                bot_state["error"] = err_msg
+
+                # Критическая ошибка символа — останавливаем бота
+                if "Not supported" in err_msg or "ErrCode: 10001" in err_msg:
+                    mode = "тестнете" if config.BYBIT_TESTNET else "production"
+                    web_logger.error(
+                        f"⛔ Пара {config.SYMBOL} не поддерживается на {mode}! "
+                        f"Бот остановлен. Смените символ или режим."
+                    )
+                    bot_state["running"] = False
+                    break
 
             # Ожидание с проверкой флага
             for _ in range(config.CHECK_INTERVAL_SECONDS):
@@ -312,6 +337,7 @@ def api_status():
         "error": bot_state["error"],
         "started_at": bot_state["started_at"],
         "ticks": bot_state["ticks"],
+        "check_interval": config.CHECK_INTERVAL_SECONDS,
         "position": pos_data,
     })
 
@@ -426,11 +452,26 @@ def api_klines():
             lows_arr.append(l)
             closes_arr.append(c)
 
-            if len(closes_arr) >= config.LOOKBACK_PERIOD:
-                bp = calculate_buy_point(closes_arr, highs_arr, lows_arr, config.LOOKBACK_PERIOD)
-                buy_points.append({"time": ts, "value": round(bp, 2)})
+        # Рассчитываем buy_point для каждого бара
+        raw_buy_points = []
+        for i in range(len(candles)):
+            if i + 1 >= config.LOOKBACK_PERIOD:
+                bp = calculate_buy_point(
+                    closes_arr[:i + 1], highs_arr[:i + 1], lows_arr[:i + 1],
+                    config.LOOKBACK_PERIOD
+                )
+                raw_buy_points.append(bp)
             else:
-                buy_points.append({"time": ts, "value": None})
+                raw_buy_points.append(None)
+
+        # Сдвигаем на 1 бар вперёд: на баре i показываем buy_point[i-1],
+        # т.к. сигнал покупки на баре i проверяет low[i] <= buyPoint[i-1]
+        buy_points = []
+        for i in range(1, len(candles)):
+            if raw_buy_points[i - 1] is not None:
+                buy_points.append({"time": candles[i]["time"], "value": round(raw_buy_points[i - 1], 10)})
+            else:
+                buy_points.append({"time": candles[i]["time"], "value": None})
 
         # DCA levels
         dca_lines = []
@@ -454,11 +495,65 @@ def api_klines():
                 "sell_target": round(pos.calculate_sell_target(config.SELL_PROFIT_PCT), 2),
             }
 
+        # Strategy calculation: always show the 5-bar calculation
+        # Use the DAILY timeframe regardless of chart TF
+        strategy_info = None
+        try:
+            daily_resp = session.get_kline(
+                category="spot", symbol=symbol,
+                interval=config.SIGNAL_TIMEFRAME,  # Always "D"
+                limit=config.LOOKBACK_PERIOD + 5,
+            )
+            daily_raw = daily_resp["result"]["list"]
+            daily_raw.reverse()
+
+            d_closes = [float(k[4]) for k in daily_raw]
+            d_highs = [float(k[2]) for k in daily_raw]
+            d_lows = [float(k[3]) for k in daily_raw]
+            d_timestamps = [int(k[0]) // 1000 for k in daily_raw]
+
+            if len(d_closes) >= config.LOOKBACK_PERIOD:
+                indicator = get_indicator_data(d_closes, d_highs, d_lows, config.LOOKBACK_PERIOD)
+
+                # The 5 bars used for calculation (last LOOKBACK bars before the current one)
+                lb = config.LOOKBACK_PERIOD
+                calc_bars = []
+                for i in range(len(daily_raw) - 1 - lb, len(daily_raw) - 1):
+                    if i >= 0:
+                        calc_bars.append({
+                            "time": d_timestamps[i],
+                            "high": d_highs[i],
+                            "low": d_lows[i],
+                            "close": d_closes[i],
+                            "range": round(d_highs[i] - d_lows[i], 2),
+                        })
+
+                # Current bar (the one being checked for signal)
+                current_bar = {
+                    "time": d_timestamps[-1],
+                    "low": d_lows[-1],
+                    "close": d_closes[-1],
+                }
+
+                strategy_info = {
+                    "lookback": lb,
+                    "average_range": round(indicator["average_range"], 2),
+                    "buy_point": round(indicator["buy_point"], 2),
+                    "signal": indicator["signal"],
+                    "signal_price": round(indicator.get("signal_price", 0), 2),
+                    "calc_bars": calc_bars,
+                    "current_bar": current_bar,
+                    "timeframe": config.SIGNAL_TIMEFRAME,
+                }
+        except Exception:
+            pass  # Non-critical, chart still works
+
         return jsonify({
             "candles": candles,
             "buy_points": buy_points,
             "dca_lines": dca_lines,
             "position_lines": pos_lines,
+            "strategy": strategy_info,
         })
 
     except Exception as e:
@@ -475,6 +570,403 @@ def api_logs():
     return jsonify({"logs": logs, "total": len(log_buffer)})
 
 
+@app.route("/api/backtest", methods=["GET", "POST"])
+def api_backtest():
+    """
+    Бэктест DCA-стратегии на исторических данных.
+    Логика:
+      1. Сигнал покупки: low <= buyPoint предыдущего бара → покупка DCA-1 (0%)
+      2. Если цена падает ниже DCA-уровней → покупки DCA-2, DCA-3 и т.д.
+      3. Каждый DCA-уровень покупается ОДИН раз за цикл
+      4. Продажа: ВСЕ позиции продаются, когда цена >= безубыточность * (1 + sell_pct%)
+      5. После продажи — новый цикл (все DCA-уровни сбрасываются)
+    """
+    # Поддержка GET (query params) и POST (JSON body с DCA-таблицей)
+    if request.method == "POST":
+        body = request.get_json(force=True) or {}
+        symbol = body.get("symbol", config.SYMBOL)
+        interval = body.get("interval", config.TIMEFRAME)
+        limit = int(body.get("limit", 1000))
+        lookback = int(body.get("lookback", config.LOOKBACK_PERIOD))
+        sell_pct = float(body.get("sell_pct", config.SELL_PROFIT_PCT))
+        balance = float(body.get("balance", config.TOTAL_BALANCE))
+        dca_points = body.get("dca_points", config.DCA_POINTS)
+    else:
+        symbol = request.args.get("symbol", config.SYMBOL)
+        interval = request.args.get("interval", config.TIMEFRAME)
+        limit = int(request.args.get("limit", 1000))
+        lookback = int(request.args.get("lookback", config.LOOKBACK_PERIOD))
+        sell_pct = float(request.args.get("sell_pct", config.SELL_PROFIT_PCT))
+        balance = float(request.args.get("balance", config.TOTAL_BALANCE))
+        dca_points = config.DCA_POINTS
+
+    try:
+        session = HTTP(testnet=False)
+        response = session.get_kline(
+            category="spot", symbol=symbol,
+            interval=interval, limit=limit,
+        )
+
+        klines_raw = response["result"]["list"]
+        klines_raw.reverse()
+
+        # Подготовка данных
+        candles = []
+        for k in klines_raw:
+            candles.append({
+                "time": int(k[0]) // 1000,
+                "open": float(k[1]),
+                "high": float(k[2]),
+                "low": float(k[3]),
+                "close": float(k[4]),
+            })
+
+        # Массивы для расчётов
+        highs = [c["high"] for c in candles]
+        lows = [c["low"] for c in candles]
+        closes = [c["close"] for c in candles]
+
+        # Рассчитываем buy_point для каждого бара
+        buy_points = []
+        for i in range(len(candles)):
+            if i + 1 >= lookback:
+                h_slice = highs[:i + 1]
+                l_slice = lows[:i + 1]
+                c_slice = closes[:i + 1]
+                bp = calculate_buy_point(c_slice, h_slice, l_slice, lookback)
+                buy_points.append(bp)
+            else:
+                buy_points.append(None)
+
+        # ══════════════════════════════════════════════════════
+        # DCA-симуляция торговли
+        # ══════════════════════════════════════════════════════
+        cycles = []         # Завершённые циклы [{entries: [...], exit_time, exit_price, ...}]
+        open_positions = []  # Текущие открытые DCA-позиции
+        filled_levels = set()  # Какие DCA-уровни уже заполнены в текущем цикле
+        first_entry_price = None  # Цена первого входа (DCA-1) — для расчёта DCA-уровней
+        cycle_active = False  # Идёт ли торговый цикл
+
+        for i in range(1, len(candles)):
+            ts = candles[i]["time"]
+            low_price = candles[i]["low"]
+            high_price = candles[i]["high"]
+
+            # ─── ПРОДАЖА: проверяем TP по безубыточности ───
+            if open_positions:
+                total_cost = sum(p["entry_price"] * p["qty"] for p in open_positions)
+                total_qty = sum(p["qty"] for p in open_positions)
+                breakeven = total_cost / total_qty if total_qty > 0 else 0
+                sell_target = breakeven * (1 + sell_pct / 100)
+
+                if high_price >= sell_target:
+                    # Продаём ВСЕ позиции по sell_target
+                    total_invested = sum(p["order_size"] for p in open_positions)
+                    total_pnl = (sell_target - breakeven) * total_qty
+                    pnl_pct = (sell_target / breakeven - 1) * 100
+
+                    cycle_data = {
+                        "entries": [],
+                        "exit_time": ts,
+                        "exit_price": round(sell_target, 6),
+                        "breakeven": round(breakeven, 6),
+                        "total_qty": total_qty,
+                        "total_invested": round(total_invested, 2),
+                        "total_pnl": round(total_pnl, 4),
+                        "pnl_pct": round(pnl_pct, 4),
+                        "dca_count": len(open_positions),
+                        "result": "win",
+                    }
+                    for p in open_positions:
+                        entry_data = {
+                            "entry_time": p["entry_time"],
+                            "entry_price": round(p["entry_price"], 6),
+                            "qty": p["qty"],
+                            "order_size": p["order_size"],
+                            "level": p["level"],
+                        }
+                        if "calc" in p:
+                            entry_data["calc"] = p["calc"]
+                        cycle_data["entries"].append(entry_data)
+
+                    cycles.append(cycle_data)
+
+                    # Сброс цикла
+                    open_positions = []
+                    filled_levels = set()
+                    first_entry_price = None
+                    cycle_active = False
+                    continue  # Переходим к следующему бару
+
+            # ─── ПОКУПКА: проверяем сигнал и DCA-уровни ───
+            prev_bp = buy_points[i - 1]
+
+            if not cycle_active:
+                # Нет активного цикла — ждём сигнал покупки (DCA-1)
+                if prev_bp is not None and low_price <= prev_bp:
+                    # Сигнал! Открываем DCA-1
+                    dca1 = dca_points[0]
+                    order_size = balance * dca1["balance_pct"] / 100
+                    entry_price = prev_bp
+                    qty = order_size / entry_price
+
+                    # Собираем данные расчёта (5 баров и формулу)
+                    calc_bars = []
+                    prev_bar_idx = i - 1  # Бар, чей buy_point мы используем
+                    for bi in range(lookback):
+                        idx = prev_bar_idx - bi
+                        if idx >= 0:
+                            calc_bars.append({
+                                "time": candles[idx]["time"],
+                                "high": candles[idx]["high"],
+                                "low": candles[idx]["low"],
+                                "range": round(candles[idx]["high"] - candles[idx]["low"], 10),
+                            })
+                    calc_bars.reverse()  # От старого к новому
+                    avg_range = sum(b["range"] for b in calc_bars) / len(calc_bars) if calc_bars else 0
+                    prev_close = candles[prev_bar_idx]["close"] if prev_bar_idx >= 0 else 0
+
+                    open_positions.append({
+                        "entry_price": entry_price,
+                        "entry_time": ts,
+                        "qty": qty,
+                        "order_size": order_size,
+                        "level": 1,
+                        "calc": {
+                            "bars": calc_bars,
+                            "avg_range": round(avg_range, 10),
+                            "prev_close": prev_close,
+                            "buy_point": round(entry_price, 10),
+                            "signal_bar_time": ts,
+                            "signal_bar_low": low_price,
+                        },
+                    })
+                    filled_levels.add(1)
+                    first_entry_price = entry_price
+                    cycle_active = True
+            else:
+                # Цикл активен — проверяем DCA-уровни 2, 3, 4...
+                for dca in dca_points[1:]:  # Пропускаем level 1 (уже куплен)
+                    lvl = dca["level"]
+                    if lvl in filled_levels:
+                        continue  # Уже куплен в этом цикле
+
+                    dca_price = first_entry_price * (1 - dca["drop_pct"] / 100)
+                    if low_price <= dca_price:
+                        order_size = balance * dca["balance_pct"] / 100
+                        entry_price = dca_price
+                        qty = order_size / entry_price
+
+                        open_positions.append({
+                            "entry_price": entry_price,
+                            "entry_time": ts,
+                            "qty": qty,
+                            "order_size": order_size,
+                            "level": lvl,
+                        })
+                        filled_levels.add(lvl)
+
+        # ─── Незакрытый цикл (позиции открыты) ───
+        last_price = closes[-1] if closes else 0
+        if open_positions:
+            total_cost = sum(p["entry_price"] * p["qty"] for p in open_positions)
+            total_qty = sum(p["qty"] for p in open_positions)
+            breakeven = total_cost / total_qty if total_qty > 0 else 0
+            total_invested = sum(p["order_size"] for p in open_positions)
+            total_pnl = (last_price - breakeven) * total_qty
+            pnl_pct = (last_price / breakeven - 1) * 100 if breakeven > 0 else 0
+
+            cycle_data = {
+                "entries": [],
+                "exit_time": None,
+                "exit_price": round(last_price, 6),
+                "breakeven": round(breakeven, 6),
+                "total_qty": total_qty,
+                "total_invested": round(total_invested, 2),
+                "total_pnl": round(total_pnl, 4),
+                "pnl_pct": round(pnl_pct, 4),
+                "dca_count": len(open_positions),
+                "result": "open",
+            }
+            for p in open_positions:
+                entry_data = {
+                    "entry_time": p["entry_time"],
+                    "entry_price": round(p["entry_price"], 6),
+                    "qty": p["qty"],
+                    "order_size": p["order_size"],
+                    "level": p["level"],
+                }
+                if "calc" in p:
+                    entry_data["calc"] = p["calc"]
+                cycle_data["entries"].append(entry_data)
+            cycles.append(cycle_data)
+
+        # ══════════════════════════════════════════════════════
+        # Формируем плоский список trades для совместимости с UI
+        # ══════════════════════════════════════════════════════
+        trades = []
+        for cycle in cycles:
+            for entry in cycle["entries"]:
+                pnl_per_entry = (cycle["exit_price"] - entry["entry_price"]) * entry["qty"] if cycle["exit_time"] else (last_price - entry["entry_price"]) * entry["qty"]
+                pnl_pct_entry = ((cycle["exit_price"] / entry["entry_price"]) - 1) * 100 if cycle["exit_time"] else ((last_price / entry["entry_price"]) - 1) * 100 if entry["entry_price"] > 0 else 0
+                trade_data = {
+                    "entry_time": entry["entry_time"],
+                    "exit_time": cycle["exit_time"],
+                    "entry_price": entry["entry_price"],
+                    "exit_price": cycle["exit_price"],
+                    "qty": entry["qty"],
+                    "order_size": entry["order_size"],
+                    "pnl": round(pnl_per_entry, 4),
+                    "pnl_pct": round(pnl_pct_entry, 4),
+                    "result": cycle["result"],
+                    "level": entry["level"],
+                    "dca_count": cycle["dca_count"],
+                    "breakeven": cycle["breakeven"],
+                }
+                if "calc" in entry:
+                    trade_data["calc"] = entry["calc"]
+                trades.append(trade_data)
+
+        # Статистика
+        closed_cycles = [c for c in cycles if c["result"] != "open"]
+        open_cycles = [c for c in cycles if c["result"] == "open"]
+        closed_trades = [t for t in trades if t["result"] != "open"]
+        open_trades_list = [t for t in trades if t["result"] == "open"]
+        total_pnl = sum(c["total_pnl"] for c in cycles)
+        closed_pnl = sum(c["total_pnl"] for c in closed_cycles)
+        total_invested = sum(c["total_invested"] for c in cycles)
+        roi = (total_pnl / total_invested * 100) if total_invested > 0 else 0
+        avg_dca = sum(c["dca_count"] for c in cycles) / len(cycles) if cycles else 0
+
+        # Маркеры для графика
+        def fmt_price(p):
+            """Умное форматирование цены: больше знаков для дешёвых монет."""
+            if p >= 1000:
+                return f"{p:,.2f}"
+            elif p >= 1:
+                return f"{p:.4f}"
+            elif p >= 0.01:
+                return f"{p:.6f}"
+            elif p >= 0.0001:
+                return f"{p:.8f}"
+            elif p >= 0.000001:
+                return f"{p:.10f}"
+            elif p >= 0.00000001:
+                return f"{p:.12f}"
+            elif p >= 0.0000000001:
+                return f"{p:.14f}"
+            elif p >= 0.000000000001:
+                return f"{p:.16f}"
+            elif p >= 0.00000000000001:
+                return f"{p:.18f}"
+            else:
+                return f"{p:.20f}"
+
+        buy_markers = []
+        sell_markers = []
+        for t in trades:
+            level_text = f"DCA-{t['level']}" if t["level"] > 1 else "BUY"
+            buy_markers.append({
+                "time": t["entry_time"],
+                "position": "belowBar",
+                "color": "#10b981",
+                "shape": "arrowUp",
+                "text": f"{level_text} ${fmt_price(t['entry_price'])}",
+            })
+        for cycle in cycles:
+            if cycle["exit_time"] is not None:
+                sell_markers.append({
+                    "time": cycle["exit_time"],
+                    "position": "aboveBar",
+                    "color": "#10b981",
+                    "shape": "arrowDown",
+                    "text": f"SELL ${fmt_price(cycle['exit_price'])} (+${cycle['total_pnl']:.2f})",
+                })
+
+        stats = {
+            "total_trades": len(trades),
+            "total_cycles": len(cycles),
+            "closed_cycles": len(closed_cycles),
+            "open_cycles": len(open_cycles),
+            "closed_trades": len(closed_trades),
+            "open_trades": len(open_trades_list),
+            "wins": len(closed_cycles),
+            "losses": 0,
+            "win_rate": 100.0 if closed_cycles else 0,
+            "total_pnl": round(total_pnl, 4),
+            "closed_pnl": round(closed_pnl, 4),
+            "total_invested": round(total_invested, 2),
+            "roi": round(roi, 2),
+            "avg_pnl": round(closed_pnl / len(closed_cycles), 4) if closed_cycles else 0,
+            "avg_dca_count": round(avg_dca, 1),
+            "best_trade": round(max((c["total_pnl"] for c in closed_cycles), default=0), 4),
+            "worst_trade": round(min((c["total_pnl"] for c in closed_cycles), default=0), 4),
+        }
+
+        # Buy point линия для графика
+        # Сдвигаем на 1 бар вперёд: на баре i показываем buy_points[i-1],
+        # т.к. сигнал на баре i проверяет low[i] <= buyPoint[i-1]
+        bp_line = []
+        for i in range(1, len(candles)):
+            if buy_points[i - 1] is not None:
+                bp_line.append({
+                    "time": candles[i]["time"],
+                    "value": round(buy_points[i - 1], 10),
+                })
+
+        return jsonify({
+            "trades": trades,
+            "cycles": cycles,
+            "stats": stats,
+            "buy_markers": buy_markers,
+            "sell_markers": sell_markers,
+            "buy_points": bp_line,
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/symbols")
+def api_symbols():
+    """Получить список торговых пар с Bybit."""
+    search = request.args.get("search", "").upper()
+    category = request.args.get("category", "spot")
+    limit = int(request.args.get("limit", 50))
+
+    try:
+        session = HTTP(testnet=False)
+        response = session.get_tickers(category=category)
+        symbols_raw = response["result"]["list"]
+
+        symbols = []
+        for s in symbols_raw:
+            sym = s["symbol"]
+            price = s.get("lastPrice", "0")
+            volume = float(s.get("turnover24h", 0))
+            pct = s.get("price24hPcnt", "0")
+
+            if search and search not in sym:
+                continue
+
+            symbols.append({
+                "symbol": sym,
+                "price": price,
+                "volume24h": volume,
+                "change24h": float(pct) * 100 if pct else 0,
+            })
+
+        # Сортируем по объёму (самые торгуемые сверху)
+        symbols.sort(key=lambda x: x["volume24h"], reverse=True)
+
+        return jsonify({"symbols": symbols[:limit]})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/indicator")
 def api_indicator():
     """Получить данные индикатора для текущей пары."""
@@ -484,7 +976,7 @@ def api_indicator():
         session = HTTP(testnet=False)
         response = session.get_kline(
             category="spot", symbol=symbol,
-            interval=config.TIMEFRAME,
+            interval=config.SIGNAL_TIMEFRAME,  # Always daily for indicator
             limit=config.LOOKBACK_PERIOD + 10,
         )
 
@@ -513,9 +1005,10 @@ def api_indicator():
 
 # ─────────────────────────────────────────
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
     print("\n" + "=" * 50)
     print("  BYBIT DCA BOT — Web Dashboard")
-    print("  http://localhost:5000")
+    print(f"  http://localhost:{port}")
     print("=" * 50 + "\n")
 
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False)

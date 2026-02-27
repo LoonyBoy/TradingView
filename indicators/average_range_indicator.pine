@@ -7,6 +7,13 @@ takeProfitPercent = input.float(2.0, "Take Profit %", minval=0.1, maxval=100, st
 maxOpenTrades = input.int(100, "Макс. открытых сделок", minval=1, maxval=100)
 orderSize = input.float(100, "Сумма покупки (USD)", minval=1, step=10)
 
+// Настройки отображения
+showTradeMarkers = input.bool(true, "Показывать маркеры сделок", group="Отображение")
+showTradeLabels = input.bool(true, "Показывать метки входа/выхода", group="Отображение")
+showTPLines = input.bool(true, "Показывать линии Take Profit", group="Отображение")
+showPositionBG = input.bool(true, "Подсветка фона при открытых позициях", group="Отображение")
+showStats = input.bool(true, "Показывать расширенную статистику", group="Отображение")
+
 // ==================== РАСЧЁТ ТОЧКИ ВХОДА ====================
 sumRange = 0.0
 for i = 0 to lookbackPeriod - 1
@@ -32,6 +39,12 @@ if canBuy
     strategy.entry("Buy_" + str.tostring(bar_index), strategy.long, qty=qty)
 
 // ==================== ЛОГИКА ПРОДАЖИ ====================
+// Отслеживаем закрытие позиций на этом баре
+closedOnThisBar = false
+closedTradeProfit = 0.0
+closedEntryPrice = 0.0
+closedExitPrice = 0.0
+
 // Проверяем каждую открытую позицию на достижение Take Profit
 for i = 0 to strategy.opentrades - 1
     entryPrice = strategy.opentrades.entry_price(i)
@@ -39,7 +52,78 @@ for i = 0 to strategy.opentrades - 1
     tradeId = strategy.opentrades.entry_id(i)
     
     if high >= targetPrice
+        closedOnThisBar := true
+        closedEntryPrice := entryPrice
+        closedExitPrice := targetPrice
+        closedTradeProfit := (targetPrice - entryPrice) / entryPrice * 100
         strategy.close(tradeId, comment="TP +" + str.tostring(takeProfitPercent) + "%")
+
+// ==================== МАРКЕРЫ ВХОДОВ/ВЫХОДОВ НА ГРАФИКЕ ====================
+
+// Зелёные стрелки вверх для покупок
+plotshape(showTradeMarkers and canBuy, title="Buy Signal", location=location.belowbar, 
+     color=color.new(color.green, 0), style=shape.triangleup, size=size.small, 
+     text="BUY", textcolor=color.new(color.green, 0))
+
+// Красные стрелки вниз для продаж (TP)
+plotshape(showTradeMarkers and closedOnThisBar, title="Sell Signal", location=location.abovebar, 
+     color=color.new(color.red, 0), style=shape.triangledown, size=size.small, 
+     text="TP", textcolor=color.new(color.red, 0))
+
+// ==================== МЕТКИ С ДЕТАЛЯМИ СДЕЛОК ====================
+
+// Метка при покупке с ценой входа и целевым TP
+if showTradeLabels and canBuy
+    entryLabelPrice = buyPoint[1]
+    tpTarget = entryLabelPrice * (1 + takeProfitPercent / 100)
+    label.new(bar_index, low, 
+         text="📥 " + str.tostring(close, "#.####") + 
+              "\nTP: " + str.tostring(tpTarget, "#.####"),
+         color=color.new(color.green, 80), 
+         textcolor=color.lime,
+         style=label.style_label_up, 
+         size=size.small,
+         tooltip="🟢 ВХОД В ПОЗИЦИЮ\n" +
+                 "━━━━━━━━━━━━━━\n" +
+                 "Цена входа: " + str.tostring(close, "#.#####") + 
+                 "\nСумма: $" + str.tostring(orderSize) +
+                 "\nКол-во: " + str.tostring(qty, "#.######") +
+                 "\nTake Profit: " + str.tostring(tpTarget, "#.#####") +
+                 "\nОткрытых сделок: " + str.tostring(openTrades + 1))
+
+// Метка при продаже с прибылью
+if showTradeLabels and closedOnThisBar
+    label.new(bar_index, high,
+         text="📤 TP +" + str.tostring(closedTradeProfit, "#.##") + "%",
+         color=color.new(color.red, 80),
+         textcolor=color.orange,
+         style=label.style_label_down,
+         size=size.small,
+         tooltip="🔴 ВЫХОД ИЗ ПОЗИЦИИ\n" +
+                 "━━━━━━━━━━━━━━\n" +
+                 "Вход: " + str.tostring(closedEntryPrice, "#.#####") +
+                 "\nВыход: " + str.tostring(closedExitPrice, "#.#####") +
+                 "\nПрибыль: +" + str.tostring(closedTradeProfit, "#.##") + "%" +
+                 "\nВсего закрытых: " + str.tostring(strategy.closedtrades))
+
+// ==================== ЛИНИИ TAKE PROFIT ====================
+// Рисуем линию TP для текущей средней позиции
+if showTPLines and strategy.opentrades > 0
+    avgEntry = strategy.position_avg_price
+    tpLine = avgEntry * (1 + takeProfitPercent / 100)
+    // Рисуем пунктирную линию TP 
+    line.new(bar_index - 1, tpLine, bar_index, tpLine, 
+         color=color.new(color.orange, 50), width=1, style=line.style_dotted,
+         extend=extend.none)
+
+// ==================== ПОДСВЕТКА ФОНА ====================
+// Зеленоватый фон когда есть открытые позиции
+bgColor = showPositionBG and strategy.opentrades > 0 ? color.new(color.green, 95) : na
+bgcolor(bgColor, title="Фон открытой позиции")
+
+// Красный мигающий фон при закрытии сделки
+sellBgColor = showPositionBG and closedOnThisBar ? color.new(color.orange, 85) : na
+bgcolor(sellBgColor, title="Фон закрытия сделки")
 
 // ==================== ВИЗУАЛИЗАЦИЯ ====================
 // Начальная точка линии (low первого бара из периода)
@@ -100,25 +184,147 @@ if barstate.islast
                  "Период: " + str.tostring(lookbackPeriod) + " баров"
          )
 
-// ==================== СТАТИСТИКА ====================
-var table infoTable = table.new(position.top_right, 2, 7, bgcolor=color.new(color.black, 80))
-if barstate.islast
-    table.cell(infoTable, 0, 0, "Средний диапазон:", text_color=color.white)
-    table.cell(infoTable, 1, 0, str.tostring(averageRange, "#.#####"), text_color=color.yellow)
-    table.cell(infoTable, 0, 1, "Точка покупки:", text_color=color.white)
-    table.cell(infoTable, 1, 1, str.tostring(buyPoint, "#.#####"), text_color=color.green)
-    table.cell(infoTable, 0, 2, "Take Profit:", text_color=color.white)
-    table.cell(infoTable, 1, 2, str.tostring(takeProfitPercent) + "%", text_color=color.orange)
-    table.cell(infoTable, 0, 3, "Сумма покупки:", text_color=color.white)
-    table.cell(infoTable, 1, 3, "$" + str.tostring(orderSize), text_color=color.yellow)
-    table.cell(infoTable, 0, 4, "Открытых сделок:", text_color=color.white)
-    table.cell(infoTable, 1, 4, str.tostring(openTrades), text_color=color.aqua)
-    table.cell(infoTable, 0, 5, "Закрытых сделок:", text_color=color.white)
-    table.cell(infoTable, 1, 5, str.tostring(strategy.closedtrades), text_color=color.white)
-    table.cell(infoTable, 0, 6, "Прибыль:", text_color=color.white)
+// ==================== РАСШИРЕННАЯ СТАТИСТИКА P&L ====================
+
+// Подсчёт выигрышных и проигрышных сделок
+var int totalWins = 0
+var int totalLosses = 0
+var float totalProfitSum = 0.0
+var float totalLossSum = 0.0
+var float maxProfit = 0.0
+var float maxLoss = 0.0
+var float peakEquity = 0.0
+var float maxDrawdown = 0.0
+var float maxDrawdownPct = 0.0
+
+// Обновляем статистику по закрытым сделкам
+if strategy.closedtrades > 0
+    lastIdx = strategy.closedtrades - 1
+    // Пересчитываем всю статистику на каждом баре (для корректности)
+    totalWins := 0
+    totalLosses := 0
+    totalProfitSum := 0.0
+    totalLossSum := 0.0
+    maxProfit := 0.0
+    maxLoss := 0.0
+    for i = 0 to lastIdx
+        pnl = strategy.closedtrades.profit(i)
+        if pnl > 0
+            totalWins := totalWins + 1
+            totalProfitSum := totalProfitSum + pnl
+            if pnl > maxProfit
+                maxProfit := pnl
+        else
+            totalLosses := totalLosses + 1
+            totalLossSum := totalLossSum + math.abs(pnl)
+            if math.abs(pnl) > maxLoss
+                maxLoss := math.abs(pnl)
+
+// Drawdown
+currentEquity = strategy.equity
+if currentEquity > peakEquity
+    peakEquity := currentEquity
+currentDD = peakEquity - currentEquity
+currentDDPct = peakEquity > 0 ? (currentDD / peakEquity) * 100 : 0.0
+if currentDD > maxDrawdown
+    maxDrawdown := currentDD
+if currentDDPct > maxDrawdownPct
+    maxDrawdownPct := currentDDPct
+
+// Рассчитываем метрики
+winRate = strategy.closedtrades > 0 ? (totalWins / strategy.closedtrades) * 100 : 0.0
+avgWin = totalWins > 0 ? totalProfitSum / totalWins : 0.0
+avgLoss = totalLosses > 0 ? totalLossSum / totalLosses : 0.0
+profitFactor = totalLossSum > 0 ? totalProfitSum / totalLossSum : (totalProfitSum > 0 ? 999.99 : 0.0)
+avgTrade = strategy.closedtrades > 0 ? strategy.netprofit / strategy.closedtrades : 0.0
+returnPct = strategy.initial_capital > 0 ? (strategy.netprofit / strategy.initial_capital) * 100 : 0.0
+
+// ==================== ТАБЛИЦА СТАТИСТИКИ ====================
+var table infoTable = table.new(position.top_right, 2, 15, bgcolor=color.new(color.black, 80), border_width=1)
+if barstate.islast and showStats
     netProfit = strategy.netprofit
     profitColor = netProfit >= 0 ? color.green : color.red
-    table.cell(infoTable, 1, 6, str.tostring(netProfit, "#.##"), text_color=profitColor)
+    
+    row = 0
+    // Заголовок
+    table.cell(infoTable, 0, row, "📊 P&L СТАТИСТИКА", text_color=color.yellow, text_size=size.normal)
+    table.cell(infoTable, 1, row, "", text_color=color.yellow)
+    row := row + 1
+    
+    // Разделитель
+    table.cell(infoTable, 0, row, "━━━━━━━━━━", text_color=color.gray, text_size=size.tiny)
+    table.cell(infoTable, 1, row, "━━━━━━━━", text_color=color.gray, text_size=size.tiny)
+    row := row + 1
+    
+    // Чистая прибыль
+    table.cell(infoTable, 0, row, "💰 Чистая прибыль:", text_color=color.white)
+    table.cell(infoTable, 1, row, "$" + str.tostring(netProfit, "#.##"), text_color=profitColor)
+    row := row + 1
+    
+    // Доходность %
+    table.cell(infoTable, 0, row, "📈 Доходность:", text_color=color.white)
+    table.cell(infoTable, 1, row, str.tostring(returnPct, "#.##") + "%", text_color=profitColor)
+    row := row + 1
+    
+    // Всего сделок
+    table.cell(infoTable, 0, row, "📋 Всего сделок:", text_color=color.white)
+    table.cell(infoTable, 1, row, str.tostring(strategy.closedtrades), text_color=color.white)
+    row := row + 1
+    
+    // Win Rate
+    wrColor = winRate >= 60 ? color.green : (winRate >= 40 ? color.yellow : color.red)
+    table.cell(infoTable, 0, row, "🎯 Win Rate:", text_color=color.white)
+    table.cell(infoTable, 1, row, str.tostring(winRate, "#.#") + "% (" + str.tostring(totalWins) + "/" + str.tostring(strategy.closedtrades) + ")", text_color=wrColor)
+    row := row + 1
+    
+    // Profit Factor
+    pfColor = profitFactor >= 1.5 ? color.green : (profitFactor >= 1.0 ? color.yellow : color.red)
+    table.cell(infoTable, 0, row, "⚖️ Profit Factor:", text_color=color.white)
+    table.cell(infoTable, 1, row, str.tostring(profitFactor, "#.##"), text_color=pfColor)
+    row := row + 1
+    
+    // Средний профит на сделку
+    table.cell(infoTable, 0, row, "📊 Средн. сделка:", text_color=color.white)
+    table.cell(infoTable, 1, row, "$" + str.tostring(avgTrade, "#.##"), text_color=avgTrade >= 0 ? color.green : color.red)
+    row := row + 1
+    
+    // Средний выигрыш
+    table.cell(infoTable, 0, row, "✅ Средн. выигрыш:", text_color=color.white)
+    table.cell(infoTable, 1, row, "$" + str.tostring(avgWin, "#.##"), text_color=color.green)
+    row := row + 1
+    
+    // Средний проигрыш
+    table.cell(infoTable, 0, row, "❌ Средн. проигрыш:", text_color=color.white)
+    table.cell(infoTable, 1, row, "$" + str.tostring(avgLoss, "#.##"), text_color=color.red)
+    row := row + 1
+    
+    // Макс. drawdown
+    table.cell(infoTable, 0, row, "📉 Макс. просадка:", text_color=color.white)
+    table.cell(infoTable, 1, row, "$" + str.tostring(maxDrawdown, "#.##") + " (" + str.tostring(maxDrawdownPct, "#.#") + "%)", text_color=color.red)
+    row := row + 1
+    
+    // Открытых сейчас
+    table.cell(infoTable, 0, row, "🔓 Открытых сделок:", text_color=color.white)
+    table.cell(infoTable, 1, row, str.tostring(openTrades), text_color=color.aqua)
+    row := row + 1
+    
+    // Сумма покупки
+    table.cell(infoTable, 0, row, "💵 Сумма покупки:", text_color=color.white)
+    table.cell(infoTable, 1, row, "$" + str.tostring(orderSize), text_color=color.yellow)
+    row := row + 1
+    
+    // Текущая точка покупки
+    table.cell(infoTable, 0, row, "🎯 Точка покупки:", text_color=color.white)
+    table.cell(infoTable, 1, row, str.tostring(buyPoint, "#.#####"), text_color=color.green)
+    row := row + 1
+    
+    // Take Profit
+    table.cell(infoTable, 0, row, "🏆 Take Profit:", text_color=color.white)
+    table.cell(infoTable, 1, row, str.tostring(takeProfitPercent) + "%", text_color=color.orange)
 
 // Линия точек входа (сдвинута на 1 бар вправо)
 plot(buyPoint, "Buy Point Level", color=color.new(color.green, 50), linewidth=1, style=plot.style_stepline, offset=1)
+
+// ==================== КРИВАЯ EQUITY ====================
+// Отображаем кривую equity внизу как отдельный график (в окне данных)
+plot(strategy.equity, "Equity", color=color.new(color.blue, 80), display=display.data_window)
