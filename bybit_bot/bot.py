@@ -66,7 +66,6 @@ class TradingBot:
         self.symbol = config.SYMBOL
         self.timeframe = config.TIMEFRAME
         self.lookback = config.LOOKBACK_PERIOD
-        self.sell_profit_pct = config.SELL_PROFIT_PCT
         self.check_interval = config.CHECK_INTERVAL_SECONDS
 
     def start(self):
@@ -97,7 +96,6 @@ class TradingBot:
 ║  Lookback:     {self.lookback:<33}║
 ║  Баланс:       ${config.TOTAL_BALANCE:<32}║
 ║  DCA точек:    {len(config.DCA_POINTS):<33}║
-║  Продажа:      {self.sell_profit_pct}% от безубыточности{' ' * (33 - len(f'{self.sell_profit_pct}% от безубыточности'))}║
 ║  Тестнет:      {str(config.BYBIT_TESTNET):<33}║
 ╚══════════════════════════════════════════════════╝
 """
@@ -202,7 +200,7 @@ class TradingBot:
             # Сигнал покупки определяется ТОЛЬКО по дневному ТФ (5 баров)
             klines = self.client.get_klines(
                 symbol=self.symbol,
-                interval=config.SIGNAL_TIMEFRAME,  # Всегда "D" — дневной
+                interval=config.SIGNAL_TIMEFRAME,  # Таймфрейм из настроек
                 limit=self.lookback + 10,
             )
 
@@ -300,19 +298,30 @@ class TradingBot:
                 if order_id:
                     entry.order_id = order_id
 
-        # Проверяем продажу
-        if check_sell_signal(self.position, current_price, self.sell_profit_pct):
+        # Проверяем продажу (используем TP% текущего уровня)
+        current_tp = self._get_current_tp_pct()
+        if check_sell_signal(self.position, current_price, current_tp):
             self._execute_sell(current_price)
         else:
-            sell_target = self.position.calculate_sell_target(self.sell_profit_pct)
+            sell_target = self.position.calculate_sell_target(current_tp)
             diff_pct = ((current_price - self.position.breakeven) /
                         self.position.breakeven * 100) if self.position.breakeven > 0 else 0
             logger.info(
                 f"📊 До безубыточности: {diff_pct:+.2f}%, "
-                f"до продажи: ${sell_target:.2f}"
+                f"до продажи: ${sell_target:.2f} (TP {current_tp}%)"
             )
 
         self._save_current_state()
+
+    def _get_current_tp_pct(self) -> float:
+        """Получить TP% текущего максимального заполненного уровня."""
+        if not self.position or not self.position.filled_entries:
+            return 1.0
+        max_level = max(e.level for e in self.position.filled_entries)
+        for dp in config.DCA_POINTS:
+            if dp["level"] == max_level:
+                return float(dp.get("tp_pct", 1.0))
+        return 1.0
 
     def _place_dca_orders(self):
         """Выставить лимитные ордера для всех DCA-уровней."""
@@ -372,7 +381,7 @@ class TradingBot:
         if self.position.total_qty == 0:
             return
 
-        sell_target = self.position.calculate_sell_target(self.sell_profit_pct)
+        sell_target = self.position.calculate_sell_target(self._get_current_tp_pct())
         total_qty = self._adjust_qty(self.position.total_qty)
         sell_price = self._adjust_price(sell_target)
 
@@ -388,11 +397,12 @@ class TradingBot:
 
         if order_id:
             self.position.sell_order_id = order_id
+            current_tp = self._get_current_tp_pct()
             logger.info(
                 f"📤 SELL ордер: ${sell_price:.2f}, "
                 f"qty={total_qty} "
                 f"(breakeven ${self.position.breakeven:.2f} + "
-                f"{self.sell_profit_pct}%)"
+                f"{current_tp}%)"
             )
 
     def _update_sell_order(self):

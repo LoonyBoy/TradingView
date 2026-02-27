@@ -60,6 +60,17 @@ bot_state = {
 log_buffer = deque(maxlen=200)
 
 
+def get_current_tp_pct(position) -> float:
+    """Получить TP% по максимальному заполненному DCA-уровню."""
+    if not position or not position.filled_entries:
+        return 1.0
+    max_level = max(e.level for e in position.filled_entries)
+    for dp in config.DCA_POINTS:
+        if dp["level"] == max_level:
+            return float(dp.get("tp_pct", 1.0))
+    return 1.0
+
+
 class WebLogHandler(logging.Handler):
     """Логирование в буфер для вывода на веб-страницу."""
 
@@ -148,7 +159,7 @@ def bot_loop():
                     # Дневные свечи запрашиваем ТОЛЬКО для поиска сигнала покупки
                     klines = client.get_klines(
                         symbol=config.SYMBOL,
-                        interval=config.SIGNAL_TIMEFRAME,  # Всегда "D"
+                        interval=config.SIGNAL_TIMEFRAME,  # Таймфрейм из настроек
                         limit=config.LOOKBACK_PERIOD + 10,
                     )
 
@@ -199,7 +210,7 @@ def bot_loop():
                                             entry.order_id = oid
 
                                 # Sell ордер
-                                sell_target = position.calculate_sell_target(config.SELL_PROFIT_PCT)
+                                sell_target = position.calculate_sell_target(get_current_tp_pct(position))
                                 total_q = round_to_step(position.total_qty, instrument.get("qty_step", 0.00001))
                                 sell_p = round_to_step(sell_target, instrument.get("price_step", 0.01))
                                 if total_q > 0:
@@ -235,7 +246,7 @@ def bot_loop():
                             # Обновляем sell ордер
                             if position.sell_order_id:
                                 client.cancel_order(config.SYMBOL, position.sell_order_id)
-                            sell_target = position.calculate_sell_target(config.SELL_PROFIT_PCT)
+                            sell_target = position.calculate_sell_target(get_current_tp_pct(position))
                             total_q = round_to_step(position.total_qty, instrument.get("qty_step", 0.00001))
                             sell_p = round_to_step(sell_target, instrument.get("price_step", 0.01))
                             if total_q > 0:
@@ -247,7 +258,7 @@ def bot_loop():
                                     position.sell_order_id = sid
 
                     # Проверяем sell
-                    if check_sell_signal(position, price, config.SELL_PROFIT_PCT):
+                    if check_sell_signal(position, price, get_current_tp_pct(position)):
                         web_logger.info("💰 ПРОДАЖА!")
                         client.cancel_all_orders(config.SYMBOL)
                         total_q = round_to_step(position.total_qty, instrument.get("qty_step", 0.00001))
@@ -315,7 +326,7 @@ def api_status():
             "total_qty": pos.total_qty,
             "total_invested": pos.total_invested,
             "breakeven": pos.breakeven,
-            "sell_target": pos.calculate_sell_target(config.SELL_PROFIT_PCT),
+            "sell_target": pos.calculate_sell_target(get_current_tp_pct(pos)),
             "current_level": pos.current_dca_level,
             "total_levels": len(pos.entries),
         }
@@ -350,7 +361,6 @@ def api_get_config():
         "timeframe": config.TIMEFRAME,
         "lookback_period": config.LOOKBACK_PERIOD,
         "total_balance": config.TOTAL_BALANCE,
-        "sell_profit_pct": config.SELL_PROFIT_PCT,
         "check_interval": config.CHECK_INTERVAL_SECONDS,
         "testnet": config.BYBIT_TESTNET,
         "api_key_set": bool(config.BYBIT_API_KEY),
@@ -370,12 +380,11 @@ def api_update_config():
         config.SYMBOL = data["symbol"].upper()
     if "timeframe" in data:
         config.TIMEFRAME = data["timeframe"]
+        config.SIGNAL_TIMEFRAME = data["timeframe"]
     if "lookback_period" in data:
         config.LOOKBACK_PERIOD = int(data["lookback_period"])
     if "total_balance" in data:
         config.TOTAL_BALANCE = float(data["total_balance"])
-    if "sell_profit_pct" in data:
-        config.SELL_PROFIT_PCT = float(data["sell_profit_pct"])
     if "check_interval" in data:
         config.CHECK_INTERVAL_SECONDS = int(data["check_interval"])
     if "testnet" in data:
@@ -492,7 +501,7 @@ def api_klines():
         if pos and pos.is_active and pos.breakeven > 0:
             pos_lines = {
                 "breakeven": round(pos.breakeven, 2),
-                "sell_target": round(pos.calculate_sell_target(config.SELL_PROFIT_PCT), 2),
+                "sell_target": round(pos.calculate_sell_target(get_current_tp_pct(pos)), 2),
             }
 
         # Strategy calculation: always show the 5-bar calculation
@@ -501,7 +510,7 @@ def api_klines():
         try:
             daily_resp = session.get_kline(
                 category="spot", symbol=symbol,
-                interval=config.SIGNAL_TIMEFRAME,  # Always "D"
+                interval=config.SIGNAL_TIMEFRAME,  # Таймфрейм из настроек
                 limit=config.LOOKBACK_PERIOD + 5,
             )
             daily_raw = daily_resp["result"]["list"]
@@ -588,17 +597,25 @@ def api_backtest():
         interval = body.get("interval", config.TIMEFRAME)
         limit = int(body.get("limit", 1000))
         lookback = int(body.get("lookback", config.LOOKBACK_PERIOD))
-        sell_pct = float(body.get("sell_pct", config.SELL_PROFIT_PCT))
         balance = float(body.get("balance", config.TOTAL_BALANCE))
         dca_points = body.get("dca_points", config.DCA_POINTS)
+        start_date = body.get("start_date", "")  # "YYYY-MM-DD"
+        end_date = body.get("end_date", "")        # "YYYY-MM-DD"
     else:
         symbol = request.args.get("symbol", config.SYMBOL)
         interval = request.args.get("interval", config.TIMEFRAME)
         limit = int(request.args.get("limit", 1000))
         lookback = int(request.args.get("lookback", config.LOOKBACK_PERIOD))
-        sell_pct = float(request.args.get("sell_pct", config.SELL_PROFIT_PCT))
         balance = float(request.args.get("balance", config.TOTAL_BALANCE))
         dca_points = config.DCA_POINTS
+        start_date = request.args.get("start_date", "")
+        end_date = request.args.get("end_date", "")
+
+    # Собрать мапу tp_pct по уровням: {level: tp_pct}
+    tp_by_level = {}
+    for dp in dca_points:
+        lvl = dp.get("level", dp.get("level", 0))
+        tp_by_level[lvl] = float(dp.get("tp_pct", 1.0))
 
     try:
         session = HTTP(testnet=False)
@@ -620,6 +637,21 @@ def api_backtest():
                 "low": float(k[3]),
                 "close": float(k[4]),
             })
+
+        # Фильтрация по диапазону дат
+        from datetime import datetime
+        if start_date:
+            try:
+                start_ts = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
+                candles = [c for c in candles if c["time"] >= start_ts]
+            except ValueError:
+                pass
+        if end_date:
+            try:
+                end_ts = int(datetime.strptime(end_date, "%Y-%m-%d").timestamp()) + 86400  # end of day
+                candles = [c for c in candles if c["time"] < end_ts]
+            except ValueError:
+                pass
 
         # Массивы для расчётов
         highs = [c["high"] for c in candles]
@@ -657,7 +689,10 @@ def api_backtest():
                 total_cost = sum(p["entry_price"] * p["qty"] for p in open_positions)
                 total_qty = sum(p["qty"] for p in open_positions)
                 breakeven = total_cost / total_qty if total_qty > 0 else 0
-                sell_target = breakeven * (1 + sell_pct / 100)
+                # TP% определяется по максимальному заполненному уровню
+                max_filled = max(filled_levels)
+                current_tp_pct = tp_by_level.get(max_filled, 1.0)
+                sell_target = breakeven * (1 + current_tp_pct / 100)
 
                 if high_price >= sell_target:
                     # Продаём ВСЕ позиции по sell_target
@@ -976,7 +1011,7 @@ def api_indicator():
         session = HTTP(testnet=False)
         response = session.get_kline(
             category="spot", symbol=symbol,
-            interval=config.SIGNAL_TIMEFRAME,  # Always daily for indicator
+            interval=config.SIGNAL_TIMEFRAME,  # Таймфрейм из настроек
             limit=config.LOOKBACK_PERIOD + 10,
         )
 

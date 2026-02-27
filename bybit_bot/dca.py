@@ -15,6 +15,17 @@ import config
 logger = logging.getLogger(__name__)
 
 
+def _get_tp_for_position(position) -> float:
+    """Get TP% from the highest filled DCA level."""
+    if not position or not position.filled_entries:
+        return 1.0
+    max_level = max(e.level for e in position.filled_entries)
+    for dp in config.DCA_POINTS:
+        if dp["level"] == max_level:
+            return float(dp.get("tp_pct", 1.0))
+    return 1.0
+
+
 def build_dca_entries(
     first_entry_price: float,
     dca_points: List[dict],
@@ -133,7 +144,7 @@ def fill_entry(position: Position, level: int, actual_price: float) -> None:
             logger.info(
                 f"📊 Безубыточность: ${position.breakeven:.2f}, "
                 f"Цель продажи: "
-                f"${position.calculate_sell_target(config.SELL_PROFIT_PCT):.2f}"
+                f"${position.calculate_sell_target(_get_tp_for_position(position)):.2f}"
             )
             return
 
@@ -188,7 +199,7 @@ def check_sell_signal(
         True если нужно продавать.
     """
     if sell_profit_pct is None:
-        sell_profit_pct = config.SELL_PROFIT_PCT
+        sell_profit_pct = _get_tp_for_position(position)
 
     if position.current_dca_level == 0:
         return False
@@ -213,7 +224,7 @@ def get_position_report(position: Position) -> str:
     Returns:
         Форматированная строка с информацией о позиции.
     """
-    sell_target = position.calculate_sell_target(config.SELL_PROFIT_PCT)
+    sell_target = position.calculate_sell_target(_get_tp_for_position(position))
     lines = [
         "",
         "╔══════════════════════════════════════════╗",

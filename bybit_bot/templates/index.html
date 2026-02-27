@@ -563,6 +563,12 @@
             color: var(--text-muted);
         }
 
+        /* Date input dark theme fix */
+        input[type=\"date\"]::-webkit-calendar-picker-indicator {
+            filter: invert(0.8);
+            cursor: pointer;
+        }
+
         /* Info Tooltip Icon */
         .label-row {
             display: flex;
@@ -1584,8 +1590,6 @@
                     <button class="chart-btn candle-btn" onclick="loadChart(200)">200</button>
                     <button class="chart-btn candle-btn" onclick="loadChart(500)">500</button>
                     <button class="chart-btn candle-btn active" onclick="loadChart(1000)">All</button>
-                    <div class="chart-toolbar-divider"></div>
-                    <button class="btn-sm primary" onclick="runBacktest()" id="btn-backtest">🧪 Бэктест</button>
                 </div>
             </div>
             <div id="chart-container"></div>
@@ -1600,39 +1604,7 @@
             </div>
         </div>
 
-        <!-- ────── Backtest Results ────── -->
-        <div class="card" id="backtest-panel" style="display:none">
-            <div class="card-header">
-                <div class="card-title">📈 Результаты бэктеста</div>
-                <button class="btn-sm" onclick="hideBacktest()">✕ Скрыть</button>
-            </div>
-            <div class="card-body">
-                <!-- Stats Grid -->
-                <div class="backtest-stats" id="backtest-stats"></div>
-                <!-- Trades Table -->
-                <div style="margin-top:16px; max-height:400px; overflow-y:auto;">
-                    <table class="trades-table" id="trades-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Уровень</th>
-                                <th>Вход</th>
-                                <th>Выход</th>
-                                <th>Цена входа</th>
-                                <th>Цена выхода</th>
-                                <th>Сумма</th>
-                                <th>P&L</th>
-                                <th>P&L %</th>
-                                <th>Статус</th>
-                            </tr>
-                        </thead>
-                        <tbody id="trades-tbody"></tbody>
-                    </table>
-                </div>
-                <!-- Calc Detail Panel -->
-                <div class="calc-panel" id="calc-panel"></div>
-            </div>
-        </div>
+
 
         <!-- ────── Sidebar ────── -->
         <div class="sidebar">
@@ -1700,10 +1672,6 @@
                         <input id="cfg-balance" type="number" value="1000" step="100">
                     </div>
                     <div class="form-group">
-                        <label class="label-row">% продажи от безубытка <span class="info-icon">i<span class="info-tooltip">Когда цена поднимется выше безубыточности на этот %, все позиции будут проданы. Например, 1% — продажа при +1% от средневзвешенной цены входа.</span></span></label>
-                        <input id="cfg-sellpct" type="number" value="1.0" step="0.1">
-                    </div>
-                    <div class="form-group">
                         <label class="label-row">Lookback (баров) <span class="info-icon">i<span class="info-tooltip">Количество последних баров для расчёта среднего диапазона (High-Low). Точка покупки = Close − средний диапазон.</span></span></label>
                         <input id="cfg-lookback" type="number" value="5" min="1" max="50">
                     </div>
@@ -1729,12 +1697,21 @@
                 </div>
 
                 <!-- DCA Points -->
+                <div style="display:flex;align-items:center;gap:12px;margin-top:16px;margin-bottom:4px">
+                    <span style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.3px">DCA уровни</span>
+                    <div class="dca-mode-toggle" style="display:flex;border:1px solid var(--border-color);border-radius:6px;overflow:hidden;margin-left:auto">
+                        <button class="dca-mode-btn active" id="dca-mode-pct" onclick="setDCAMode('pct')" style="padding:4px 12px;font-size:11px;border:none;cursor:pointer;background:var(--accent-orange);color:#000;font-weight:600">%</button>
+                        <button class="dca-mode-btn" id="dca-mode-usd" onclick="setDCAMode('usd')" style="padding:4px 12px;font-size:11px;border:none;cursor:pointer;background:var(--bg-input);color:var(--text-muted);font-weight:600">$</button>
+                    </div>
+                </div>
                 <table class="dca-config-table" id="dca-table">
                     <thead>
                         <tr>
+                            <th>Цена</th>
                             <th>Уровень</th>
                             <th>% падения</th>
-                            <th>% баланса</th>
+                            <th id="dca-col-header">% баланса</th>
+                            <th>TP %</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -1745,6 +1722,54 @@
                     <button class="btn-sm" onclick="addDCARow()">+ Добавить уровень</button>
                     <span id="dca-total-pct"
                         style="font-size:12px;color:var(--text-muted);line-height:32px;margin-left:auto"></span>
+                </div>
+
+                <!-- ── Backtest Date Range ── -->
+                <div style="margin-top:20px;border-top:1px solid var(--border-color);padding-top:16px">
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                        <span style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.3px">📅 Период бэктеста</span>
+                        <div class="form-group" style="flex:1;min-width:140px;gap:4px;margin:0">
+                            <label style="font-size:10px">С</label>
+                            <input id="bt-date-from" type="date" style="padding:8px 10px;font-size:12px">
+                        </div>
+                        <div class="form-group" style="flex:1;min-width:140px;gap:4px;margin:0">
+                            <label style="font-size:10px">По</label>
+                            <input id="bt-date-to" type="date" style="padding:8px 10px;font-size:12px">
+                        </div>
+                        <button class="btn-sm primary" onclick="runBacktest()" id="btn-backtest" style="white-space:nowrap">🧪 Бэктест</button>
+                    </div>
+                </div>
+
+                <!-- ── Backtest Results (inline) ── -->
+                <div id="backtest-panel" style="display:none;margin-top:16px;border-top:1px solid var(--border-color);padding-top:16px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                        <span style="font-size:14px;font-weight:700;color:var(--text-primary)">📈 Результаты бэктеста</span>
+                        <button class="btn-sm" onclick="hideBacktest()">✕ Скрыть</button>
+                    </div>
+                    <!-- Stats Grid -->
+                    <div class="backtest-stats" id="backtest-stats"></div>
+                    <!-- Trades Table -->
+                    <div style="margin-top:16px; max-height:400px; overflow-y:auto;">
+                        <table class="trades-table" id="trades-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Уровень</th>
+                                    <th>Вход</th>
+                                    <th>Выход</th>
+                                    <th>Цена входа</th>
+                                    <th>Цена выхода</th>
+                                    <th>Сумма</th>
+                                    <th>P&L</th>
+                                    <th>P&L %</th>
+                                    <th>Статус</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trades-tbody"></tbody>
+                        </table>
+                    </div>
+                    <!-- Calc Detail Panel -->
+                    <div class="calc-panel" id="calc-panel"></div>
                 </div>
             </div>
         </div>
@@ -1796,6 +1821,8 @@
         let currentTimeframe = 'D';
         let currentCandleCount = 1000;
         let logPollInterval = null;
+        let dcaMode = 'pct'; // 'pct' or 'usd'
+        let currentBuyPoint = 0; // Текущий buy point для DCA цен
 
         // New state for improvements
         let countdownTimer = null;
@@ -2018,6 +2045,12 @@
                 </div>
             `;
 
+            // Sync DCA table prices with strategy panel buy point
+            if (strategy.buy_point) {
+                currentBuyPoint = strategy.buy_point;
+                updateDCAPrices();
+            }
+
             // Also add markers on chart for the 5 bars used
             try {
                 const markers = strategy.calc_bars.map((bar, i) => ({
@@ -2076,7 +2109,6 @@
                 document.getElementById('cfg-symbol').value = cfg.symbol;
                 document.getElementById('cfg-timeframe').value = cfg.timeframe;
                 document.getElementById('cfg-balance').value = cfg.total_balance;
-                document.getElementById('cfg-sellpct').value = cfg.sell_profit_pct;
                 document.getElementById('cfg-lookback').value = cfg.lookback_period;
                 document.getElementById('cfg-interval').value = cfg.check_interval;
                 document.getElementById('cfg-testnet').value = String(cfg.testnet);
@@ -2107,7 +2139,6 @@
                 symbol: document.getElementById('cfg-symbol').value.toUpperCase(),
                 timeframe: document.getElementById('cfg-timeframe').value,
                 total_balance: parseFloat(document.getElementById('cfg-balance').value),
-                sell_profit_pct: parseFloat(document.getElementById('cfg-sellpct').value),
                 lookback_period: parseInt(document.getElementById('cfg-lookback').value),
                 check_interval: parseInt(document.getElementById('cfg-interval').value),
                 testnet: document.getElementById('cfg-testnet').value === 'true',
@@ -2131,10 +2162,43 @@
                 } else {
                     showToast('Конфигурация сохранена ✅', 'success');
                     loadChart(currentCandleCount);
+                    rerunBacktestIfVisible();
                 }
             } catch (e) {
                 showToast('Ошибка: ' + e.message, 'error');
             }
+        }
+
+        // ─── DCA Mode Toggle ───
+        function setDCAMode(mode) {
+            const totalBalance = parseFloat(document.getElementById('cfg-balance').value) || 1000;
+            const inputs = document.querySelectorAll('.dca-balance');
+            const oldMode = dcaMode;
+            dcaMode = mode;
+
+            // Convert values
+            inputs.forEach(inp => {
+                const val = parseFloat(inp.value) || 0;
+                if (oldMode === 'pct' && mode === 'usd') {
+                    inp.value = +(val / 100 * totalBalance).toFixed(0);
+                    inp.step = '10';
+                    inp.min = '1';
+                    inp.removeAttribute('max');
+                } else if (oldMode === 'usd' && mode === 'pct') {
+                    inp.value = totalBalance > 0 ? +(val / totalBalance * 100).toFixed(1) : 0;
+                    inp.step = '1';
+                    inp.min = '1';
+                    inp.max = '100';
+                }
+            });
+
+            // Update UI
+            document.getElementById('dca-col-header').textContent = mode === 'pct' ? '% баланса' : '$ сумма';
+            document.getElementById('dca-mode-pct').style.background = mode === 'pct' ? 'var(--accent-orange)' : 'var(--bg-input)';
+            document.getElementById('dca-mode-pct').style.color = mode === 'pct' ? '#000' : 'var(--text-muted)';
+            document.getElementById('dca-mode-usd').style.background = mode === 'usd' ? 'var(--accent-orange)' : 'var(--bg-input)';
+            document.getElementById('dca-mode-usd').style.color = mode === 'usd' ? '#000' : 'var(--text-muted)';
+            updateDCATotals();
         }
 
         // ─── DCA Table ───
@@ -2142,11 +2206,14 @@
             const tbody = document.getElementById('dca-table-body');
             tbody.innerHTML = '';
             points.forEach((p, idx) => {
+                const tpVal = p.tp_pct !== undefined ? p.tp_pct : 1.0;
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
+            <td class="dca-price" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent-cyan);text-align:right;white-space:nowrap">—</td>
             <td style="text-align:center;color:var(--text-muted);font-weight:600">${p.level}</td>
             <td><input type="number" class="dca-drop" value="${p.drop_pct}" step="0.5" min="0" oninput="updateDCATotals()"></td>
             <td><input type="number" class="dca-balance" value="${p.balance_pct}" step="1" min="1" max="100" oninput="updateDCATotals()"></td>
+            <td><input type="number" class="dca-tp" value="${tpVal}" step="0.1" min="0.1" oninput="debouncedRerunBacktest()"></td>
             <td><button class="btn-sm danger" onclick="removeDCARow(this)" style="padding:6px 10px">✕</button></td>
         `;
                 tbody.appendChild(tr);
@@ -2159,39 +2226,94 @@
             const level = tbody.children.length + 1;
             const tr = document.createElement('tr');
             tr.innerHTML = `
+        <td class="dca-price" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent-cyan);text-align:right;white-space:nowrap">—</td>
         <td style="text-align:center;color:var(--text-muted);font-weight:600">${level}</td>
         <td><input type="number" class="dca-drop" value="0" step="0.5" min="0" oninput="updateDCATotals()"></td>
         <td><input type="number" class="dca-balance" value="10" step="1" min="1" max="100" oninput="updateDCATotals()"></td>
+        <td><input type="number" class="dca-tp" value="1.0" step="0.1" min="0.1" oninput="debouncedRerunBacktest()"></td>
         <td><button class="btn-sm danger" onclick="removeDCARow(this)" style="padding:6px 10px">✕</button></td>
     `;
             tbody.appendChild(tr);
             updateDCATotals();
+            rerunBacktestIfVisible();
         }
 
         function removeDCARow(btn) {
             btn.closest('tr').remove();
             // Re-number levels
             document.querySelectorAll('#dca-table-body tr').forEach((tr, idx) => {
-                tr.children[0].textContent = idx + 1;
+                tr.children[1].textContent = idx + 1;
             });
             updateDCATotals();
+            rerunBacktestIfVisible();
         }
 
         function getDCAPoints() {
             const rows = document.querySelectorAll('#dca-table-body tr');
-            return Array.from(rows).map((tr, idx) => ({
-                level: idx + 1,
-                drop_pct: parseFloat(tr.querySelector('.dca-drop').value) || 0,
-                balance_pct: parseFloat(tr.querySelector('.dca-balance').value) || 0,
-            }));
+            const totalBalance = parseFloat(document.getElementById('cfg-balance').value) || 1000;
+            return Array.from(rows).map((tr, idx) => {
+                const rawVal = parseFloat(tr.querySelector('.dca-balance').value) || 0;
+                // Always return balance_pct (convert from $ if needed)
+                const balancePct = dcaMode === 'usd' ? (totalBalance > 0 ? rawVal / totalBalance * 100 : 0) : rawVal;
+                return {
+                    level: idx + 1,
+                    drop_pct: parseFloat(tr.querySelector('.dca-drop').value) || 0,
+                    balance_pct: +balancePct.toFixed(2),
+                    tp_pct: parseFloat(tr.querySelector('.dca-tp').value) || 1.0,
+                };
+            });
         }
 
         function updateDCATotals() {
-            const points = getDCAPoints();
-            const total = points.reduce((s, p) => s + p.balance_pct, 0);
-            const el = document.getElementById('dca-total-pct');
-            el.textContent = `Итого: ${total.toFixed(1)}%`;
-            el.style.color = total > 100 ? 'var(--accent-red)' : 'var(--text-muted)';
+            const inputs = document.querySelectorAll('.dca-balance');
+            const totalBalance = parseFloat(document.getElementById('cfg-balance').value) || 1000;
+            let total = 0;
+            inputs.forEach(inp => { total += parseFloat(inp.value) || 0; });
+
+            if (dcaMode === 'pct') {
+                // Clamp: if total > 100, reduce the last-changed input
+                if (total > 100) {
+                    const active = document.activeElement.classList.contains('dca-balance')
+                        ? document.activeElement : inputs[inputs.length - 1];
+                    const cur = parseFloat(active.value) || 0;
+                    const excess = total - 100;
+                    const clamped = Math.max(0, +(cur - excess).toFixed(1));
+                    active.value = clamped;
+                    total = 100;
+                }
+                const el = document.getElementById('dca-total-pct');
+                el.textContent = `Итого: ${total.toFixed(1)}%`;
+                el.style.color = total >= 100 ? 'var(--accent-yellow, #f0b90b)' : 'var(--text-muted)';
+            } else {
+                // USD mode: clamp to total balance
+                if (total > totalBalance) {
+                    const active = document.activeElement.classList.contains('dca-balance')
+                        ? document.activeElement : inputs[inputs.length - 1];
+                    const cur = parseFloat(active.value) || 0;
+                    const excess = total - totalBalance;
+                    const clamped = Math.max(0, +(cur - excess).toFixed(0));
+                    active.value = clamped;
+                    total = totalBalance;
+                }
+                const pct = totalBalance > 0 ? (total / totalBalance * 100) : 0;
+                const el = document.getElementById('dca-total-pct');
+                el.textContent = `Итого: $${total.toFixed(0)} (${pct.toFixed(1)}%)`;
+                el.style.color = pct >= 100 ? 'var(--accent-yellow, #f0b90b)' : 'var(--text-muted)';
+            }
+            debouncedRerunBacktest();
+            updateDCAPrices();
+        }
+
+        function updateDCAPrices() {
+            if (!currentBuyPoint || currentBuyPoint <= 0) return;
+            document.querySelectorAll('#dca-table-body tr').forEach(tr => {
+                const dropInput = tr.querySelector('.dca-drop');
+                const priceCell = tr.querySelector('.dca-price');
+                if (!dropInput || !priceCell) return;
+                const dropPct = parseFloat(dropInput.value) || 0;
+                const price = currentBuyPoint * (1 - dropPct / 100);
+                priceCell.textContent = '$' + fmtPrice(price);
+            });
         }
 
         // ─── Polling ───
@@ -2247,9 +2369,19 @@
                 if (status.last_indicator) {
                     const ind = status.last_indicator;
                     document.getElementById('m-buypoint').textContent = '$' + fmtPrice(ind.buy_point);
+                    currentBuyPoint = ind.buy_point;
+                    updateDCAPrices();
                     document.getElementById('m-avgrange').textContent = 'avg range: $' + fmtPrice(ind.average_range);
                     document.getElementById('m-signal').textContent = ind.signal ? '✅ ДА' : '❌ НЕТ';
                     document.getElementById('m-signal').className = 'metric-value ' + (ind.signal ? 'positive' : '');
+                    // Update strategy panel to match
+                    const calcEl = document.getElementById('strat-calc');
+                    if (calcEl) {
+                        const bpEl = calcEl.querySelector('.strategy-calc-item:nth-child(2) .sc-value');
+                        if (bpEl) bpEl.textContent = '$' + fmtPrice(ind.buy_point);
+                        const arEl = calcEl.querySelector('.strategy-calc-item:nth-child(1) .sc-value');
+                        if (arEl) arEl.textContent = '$' + fmtPrice(ind.average_range);
+                    }
 
                     // EVENT: Signal detected
                     if (ind.signal && prevSignalState === false) {
@@ -2626,6 +2758,19 @@
             return p.toFixed(20);
         }
 
+        // ─── Backtest auto-refresh helpers ───
+        function isBacktestVisible() {
+            return document.getElementById('backtest-panel').style.display !== 'none';
+        }
+        function rerunBacktestIfVisible() {
+            if (isBacktestVisible()) runBacktest();
+        }
+        let _btDebounce = null;
+        function debouncedRerunBacktest() {
+            clearTimeout(_btDebounce);
+            _btDebounce = setTimeout(rerunBacktestIfVisible, 800);
+        }
+
         // ─── Backtest ───
         async function runBacktest() {
             const btn = document.getElementById('btn-backtest');
@@ -2634,24 +2779,28 @@
 
             const symbol = document.getElementById('cfg-symbol').value || 'BTCUSDT';
             const interval = currentTimeframe;
-            const sellPct = document.getElementById('cfg-sellpct').value || 1.0;
             const balance = document.getElementById('cfg-balance').value || 1000;
             const lookback = document.getElementById('cfg-lookback').value || 5;
+            const dateFrom = document.getElementById('bt-date-from').value || '';
+            const dateTo = document.getElementById('bt-date-to').value || '';
 
             try {
                 const dcaPoints = getDCAPoints();
+                const body = {
+                    symbol: symbol,
+                    interval: interval,
+                    limit: currentCandleCount,
+                    balance: parseFloat(balance),
+                    lookback: parseInt(lookback),
+                    dca_points: dcaPoints,
+                };
+                if (dateFrom) body.start_date = dateFrom;
+                if (dateTo) body.end_date = dateTo;
+
                 const resp = await fetch('/api/backtest', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        symbol: symbol,
-                        interval: interval,
-                        limit: currentCandleCount,
-                        sell_pct: parseFloat(sellPct),
-                        balance: parseFloat(balance),
-                        lookback: parseInt(lookback),
-                        dca_points: dcaPoints,
-                    }),
+                    body: JSON.stringify(body),
                 });
                 const data = await resp.json();
 
@@ -2759,9 +2908,6 @@
                 });
 
                 showToast(`Бэктест: ${s.total_trades} сделок, P&L: $${s.total_pnl.toFixed(2)}`, s.total_pnl >= 0 ? 'success' : 'error');
-
-                // Прокручиваем к результатам
-                document.getElementById('backtest-panel').scrollIntoView({ behavior: 'smooth' });
 
             } catch (e) {
                 showToast('Ошибка: ' + e.message, 'error');
@@ -3027,10 +3173,20 @@
                     document.getElementById('m-price').textContent = '$' + fmtPrice(data.current_price || 0);
                     document.getElementById('m-symbol').textContent = data.symbol || symbol;
                     document.getElementById('m-buypoint').textContent = '$' + fmtPrice(data.buy_point || 0);
+                    currentBuyPoint = data.buy_point || 0;
+                    updateDCAPrices();
                     document.getElementById('m-avgrange').textContent = 'avg range: $' + fmtPrice(data.average_range || 0);
                     document.getElementById('m-signal').textContent = data.signal ? '✅ ДА' : '❌ НЕТ';
                     document.getElementById('m-signal').className = 'metric-value ' + (data.signal ? 'positive' : '');
                     prevSignalState = data.signal;
+                    // Update strategy panel to match
+                    const calcEl = document.getElementById('strat-calc');
+                    if (calcEl) {
+                        const bpEl = calcEl.querySelector('.strategy-calc-item:nth-child(2) .sc-value');
+                        if (bpEl) bpEl.textContent = '$' + fmtPrice(data.buy_point || 0);
+                        const arEl = calcEl.querySelector('.strategy-calc-item:nth-child(1) .sc-value');
+                        if (arEl) arEl.textContent = '$' + fmtPrice(data.average_range || 0);
+                    }
                 })
                 .catch(() => { });
         }
@@ -3064,6 +3220,21 @@
                     tooltip.style.top = (rect.bottom + 8) + 'px';
                     tooltip.style.left = Math.max(8, rect.left - 100) + 'px';
                 });
+            });
+
+            // Auto-rerun backtest when config fields change
+            ['cfg-balance', 'cfg-lookback'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('input', debouncedRerunBacktest);
+            });
+            // Date range changes trigger backtest re-run
+            ['bt-date-from', 'bt-date-to'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('change', rerunBacktestIfVisible);
+            });
+            // When balance changes, update DCA totals (for $ mode)
+            document.getElementById('cfg-balance').addEventListener('input', () => {
+                if (dcaMode === 'usd') updateDCATotals();
             });
         });
     </script>

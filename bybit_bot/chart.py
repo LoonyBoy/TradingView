@@ -176,7 +176,9 @@ def main():
     if breakeven_levels:
         last_be_label = list(breakeven_levels.keys())[-1]
         last_be = list(breakeven_levels.values())[-1]
-        sell_target = last_be * (1 + config.SELL_PROFIT_PCT / 100)
+        # Use tp_pct from highest DCA level
+        _tp_pct = config.DCA_POINTS[-1].get("tp_pct", 1.0) if config.DCA_POINTS else 1.0
+        sell_target = last_be * (1 + _tp_pct / 100)
 
         fig.add_hline(
             y=last_be,
@@ -193,7 +195,7 @@ def main():
             line_dash="solid",
             line_color="#00e5ff",
             line_width=2,
-            annotation_text=f"Продажа (+{config.SELL_PROFIT_PCT}%): ${sell_target:,.2f}",
+            annotation_text=f"Продажа (+{_tp_pct}%): ${sell_target:,.2f}",
             annotation_position="right",
             annotation_font_color="#00e5ff",
         )
@@ -219,8 +221,7 @@ def main():
             dict(
                 text=(
                     f"Balance: ${config.TOTAL_BALANCE} | "
-                    f"DCA: {len(config.DCA_POINTS)} levels | "
-                    f"Sell: +{config.SELL_PROFIT_PCT}% от безубыточности"
+                    f"DCA: {len(config.DCA_POINTS)} levels"
                 ),
                 xref="paper", yref="paper",
                 x=0.5, y=1.05,
